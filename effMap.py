@@ -155,10 +155,10 @@ def fit():
         return sum((regModel(DPumps, a, b, c) - nPumps) ** 2)
 
     guessSpeeds = [1e2, 1e-2, 1e2]
-    cSpeedPumps, covSpeedPumps = optimize.curve_fit(
-        regModel, DPumps, nPumps, guessSpeeds)
-    cSpeedMotors, covSpeedMotors = optimize.curve_fit(
-        regModel, DMotors, nMotors, guessSpeeds)
+    cSpeedPumps, _ = optimize.curve_fit(
+        regModel, DPumps, nPumps, p0=guessSpeeds)
+    cSpeedMotors, _ = optimize.curve_fit(
+        regModel, DMotors, nMotors, p0=guessSpeeds)
     rmseSpeedPump = np.sqrt(res(
         cSpeedPumps[0], cSpeedPumps[1], cSpeedPumps[2]) / (len(DPumps) - len(cSpeedPumps)))
     rmseSpeedMotor = np.sqrt(res(
@@ -197,7 +197,7 @@ def fit():
     plt.plot(DP, nPHatUp, label="Upper rated speed",
              linewidth=0.75, linestyle="dashed")
     markerStyle = ['o', 'v', '^', '<', '>', 'h', 's', 'p', '*']
-    colours = cm.Paired(np.linspace(0, 1, len(markerStyle)))
+    # colours = cm.Paired(np.linspace(0, 1, len(markerStyle)))
     for i in np.arange(len(man)):
         plt.scatter(dataCat["Pumps"][man[i]]["D"],
                     dataCat["Pumps"][man[i]]["n"], s=10,
@@ -396,11 +396,11 @@ def plotMap(nmax, pmax, s, aux, nmin=1000, pmin=100, charge=25, res=100, gr=0.75
     with open("data.json", "w") as write_file:
         json.dump(data, write_file)
     levels = np.linspace(50, 100, num=100 - 50 + 1, dtype=int)
-    colours = cm.viridis(np.linspace(0, 1, len(levels)))
-    colours = colours[colours != 1].reshape((len(levels), 3))
+    # colours = cm.viridis(np.linspace(0, 1, len(levels)))
+    # colours = colours[colours != 1].reshape((len(levels), 3))
     plt.figure(num=2, dpi=200)
     cs = plt.contour(n, tin, eff, levels, linewidths=0.7,
-                     linestyles="dashed", colors=colours)
+                     linestyles="dashed")
     plt.plot(nHSU, aux["tE"] / gr, linewidth=0.9,
              label='Available engine torque')
     plt.plot([nLimLow, nLimLow], [np.amin(tin), np.amax(tin)],
