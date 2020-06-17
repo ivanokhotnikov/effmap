@@ -1,4 +1,5 @@
 import numpy as np
+import plotly.graph_objects as go
 
 
 class HSU:
@@ -29,9 +30,10 @@ class HSU:
         self.efficiencies = {}
         self.performance = {}
         self.leaks = {}
+        self.size()
 
     def size(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
-        """Calculates the basic sizes of the pumping group of an axial piston machine in metres.
+        """Calculates the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
 
         Parameters
         ----------
@@ -89,34 +91,75 @@ class HSU:
         leak_pistons = sum(leak_piston)
         leak_total = sum((leak_block, leak_shoes, leak_pistons))
         th_flow_rate_pump = speed_pump * self.displ / 6e7
-        vol_pump = (1 - (pres_discharge - pres_charge) /
-                    self.oils[self.oil]['bulk'] - leak_total / th_flow_rate_pump) * 100
+        vol_pump = (1 - (pres_discharge - pres_charge) / self.oils[self.oil]['bulk']
+                    - leak_total / th_flow_rate_pump) * 100
         vol_motor = (1 - leak_total / th_flow_rate_pump) * 100
-        vol_HSU = vol_pump * vol_motor * 1e-2
+        vol_hsu = vol_pump * vol_motor * 1e-2
         mech_pump = (1 - A * np.exp(
-            -Bp * self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) - Cp * np.sqrt(
-            self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) - D / (
-            self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) * 100
+            - Bp * self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            - Cp * np.sqrt(
+            self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            - D / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) * 100
         mech_motor = (1 - A * np.exp(
-            -Bm * self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump * vol_HSU * 1e-2 / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) - Cm * np.sqrt(
-            self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump * vol_HSU * 1e-2 / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) - D / (
-            self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) * 100
-        mech_HSU = mech_pump * mech_motor * 1e-2
+            - Bm * self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            - Cm * np.sqrt(
+            self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            - D / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) * 100
+        mech_hsu = mech_pump * mech_motor * 1e-2
         total_pump = vol_pump * mech_pump * 1e-2
         total_motor = vol_motor * mech_motor * 1e-2
-        total_HSU = total_pump * total_motor * 1e-2
+        total_hsu = total_pump * total_motor * 1e-2
         torque_pump = (pres_discharge * 1e5 - pres_charge * 1e5) * \
             self.displ * 1e-6 / (2 * np.pi * mech_pump * 1e-2)
         torque_motor = (pres_discharge * 1e5 - pres_charge * 1e5) * self.displ * \
-            1e-6 / (2 * np.pi * mech_pump * 1e-2) * (mech_HSU * 1e-2)
+            1e-6 / (2 * np.pi * mech_pump * 1e-2) * (mech_hsu * 1e-2)
         power_pump = torque_pump * speed_pump * np.pi / 30 * 1e-3
-        power_motor = power_pump * total_HSU * 1e-2
-        speed_motor = speed_pump * vol_HSU * 1e-2
+        power_motor = power_pump * total_hsu * 1e-2
+        speed_motor = speed_pump * vol_hsu * 1e-2
         self.performance = {'Pump': {'Speed': speed_pump, 'Torque': torque_pump, 'Power': power_pump},
                             'Motor': {'Speed': speed_motor, 'Torque': torque_motor, 'Power': power_motor},
-                            'Delta': {'Speed': speed_pump - speed_motor, 'Torque': torque_pump - torque_motor, 'Power': power_pump - power_motor}}
+                            'Delta': {'Speed': speed_pump - speed_motor, 'Torque': torque_pump - torque_motor, 'Power': power_pump - power_motor},
+                            'Charge pressure': pres_charge, 'Discharge pressure': pres_discharge}
         self.efficiencies = {'Pump': {'Volumetric': vol_pump, 'Mechanical': mech_pump, 'Total': total_pump},
                              'Motor': {'Volumetric': vol_motor, 'Mechanical': mech_motor, 'Total': total_motor},
-                             'HSU': {'Volumetric': vol_HSU, 'Mechanical': mech_HSU, 'Total': total_HSU}}
+                             'HSU': {'Volumetric': vol_hsu, 'Mechanical': mech_hsu, 'Total': total_hsu}}
         self.leaks = {'Machine': {'Block': leak_block, 'Shoes': leak_shoes, 'Pistons': leak_pistons, 'Total': leak_total},
-                      'HSU': {'Block': 2 * leak_block, 'Shoes': 2 * leak_shoes, 'Pistons': 2 * leak_pistons, 'Total': 2 * leak_total}}
+                      'HSU': {'Block': 2*leak_block, 'Shoes': 2*leak_shoes, 'Pistons': 2*leak_pistons, 'Total': 2*leak_total}}
+        return self.efficiencies
+
+    def plot_eff_map(self, max_speed_pump, max_pressure, min_speed_pump=1000, min_pressure=100, res=100):
+        """Plots and saves the HSU efficiency map.
+
+        Parameters
+        ----------
+        max_speed_pump : float
+            The upper limit of the input (pump) speed range on the map in rpm.
+        max_pressure : float
+            The upper limit of the discharge pressure range on the map in bar.
+        min_speed_pump : float, optional
+            The lower limit of the input speed range on the map in rpm, default nmin = 1000 rpm.
+        min_pressure : float, optional
+            The lower limit of the discharge pressure range on the map in bar, default pmin = 100 bar.
+        res : float, optional
+            The resolution of the map. The number of efficiency samples calculated per axis, default = 100.
+        """
+        speed = np.linspace(min_speed_pump, max_speed_pump, res)
+        pressure = np.linspace(min_pressure, max_pressure, res)
+        eff_hsu = [[self.efficiency(speed[i], pressure[j])['HSU']['Total']
+                    for i in range(len(speed))]
+                   for j in range(len(pressure))]
+        return eff_hsu
+
+
+if __name__ == '__main__':
+    NGLAV = HSU(440)
+    NGLAV.size()
+    map = NGLAV.plot_eff_map(3000, 500)
+    fig = go.Figure(
+        data=go.Contour(z=map,
+                        contours=dict(coloring='heatmap',
+                                      showlabels=True,                                         labelfont=dict(size=12, color='white',)
+                                      )
+                        )
+    )
+    fig.show()
