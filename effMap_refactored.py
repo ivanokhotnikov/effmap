@@ -1,6 +1,15 @@
 import numpy as np
 import plotly.graph_objects as go
 
+oils = {'15w40': {'visc_kin': 13.65, 'density': 829.1, 'visc_dyn': 13.65 * 829.1 / 1e6, 'bulk': 15000},
+        '5w30': {'visc_kin': 12.08, 'density': 820, 'visc_dyn': 12.08 * 820 / 1e6, 'bulk': 15000},
+        '10w40': {'visc_kin': 14.61, 'density': 804.5, 'visc_dyn': 14.61 * 804.5 / 1e6, 'bulk': 15000}}
+engines = {'engine_1': {'speed': [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000],
+                        'torque': [1350, 1450, 1550, 1650, 1800, 1975, 2200, 2450, 2750, 3100, 3100, 3100, 3100, 3022, 2944, 2849, 2757, 2654, 2200, 1800, 0],
+                        'power': [141.372, 167.028, 194.779, 224.624, 263.894, 310.232, 368.614, 436.158, 518.363, 616.799, 649.262, 681.726, 714.189, 727.865, 739.908, 745.866, 750.652, 750.401, 645.074, 546.637, 0.000]},
+           'engine_2': {'speed': [600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400],
+                        'torque': [1000, 1100, 1450, 1750, 2100, 2400,	2600, 2950, 3100, 3300, 3400, 3500, 3400, 3300, 3200, 3000,	2800, 2600, 0]}}
+
 
 class HSU:
     """Creates the HSU object.
@@ -17,11 +26,8 @@ class HSU:
         Choices of available oils, default '15w40'. Each is a dictionary with the following structure: {'visc_kin': float, 'density': float, 'bulk': float}.
         Here 'visc_kin' is the kinematic viscosity of the oil in cSt, 'density' is its density in kg/cub.m, 'bulk' is the bulk modulus in bar. All properties are at 100C.
     """
-    oils = {'15w40': {'visc_kin': 13.65, 'density': 829.1, 'visc_dyn': 13.65 * 829.1 / 1e6, 'bulk': 15000},
-            '5w30': {'visc_kin': 12.08, 'density': 820, 'visc_dyn': 12.08 * 820 / 1e6, 'bulk': 15000},
-            '10w40': {'visc_kin': 14.61, 'density': 804.5, 'visc_dyn': 14.61 * 804.5 / 1e6, 'bulk': 15000}}
 
-    def __init__(self, disp, swash=18, pistons=9, oil='15w40'):
+    def __init__(self, disp, swash=18, pistons=9, oil='15w40', engine='engine_1', input_gear_ratio=.75):
         self.displ = disp
         self.swash = swash
         self.pistons = pistons
@@ -30,6 +36,8 @@ class HSU:
         self.efficiencies = {}
         self.performance = {}
         self.leaks = {}
+        self.input_gear_ratio = input_gear_ratio
+        self.engine = engine
         self.size()
 
     def size(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
@@ -82,28 +90,28 @@ class HSU:
 
         """
         leak_block = np.pi * h1 ** 3 * 0.5 * (pres_discharge * 1e5 + pres_charge * 1e5) * (
-            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * self.oils[self.oil]['visc_dyn'])
+            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * oils[self.oil]['visc_dyn'])
         leak_shoes = (self.pistons * np.pi * h2 ** 3 * 0.5 * (pres_discharge * 1e5 + pres_charge * 1e5) / (
-            6 * self.oils[self.oil]['visc_dyn'] * np.log(self.sizes['Rs'] / self.sizes['rs'])))
+            6 * oils[self.oil]['visc_dyn'] * np.log(self.sizes['Rs'] / self.sizes['rs'])))
         leak_piston = np.array([self.pistons * np.pi * self.sizes['d'] * h3 ** 3 * 0.5 * (pres_discharge * 1e5 + pres_charge * 1e5) * (
-            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * self.oils[self.oil]['visc_dyn'])
+            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * oils[self.oil]['visc_dyn'])
             for ii in np.arange(self.pistons)])
         leak_pistons = sum(leak_piston)
         leak_total = sum((leak_block, leak_shoes, leak_pistons))
         th_flow_rate_pump = speed_pump * self.displ / 6e7
-        vol_pump = (1 - (pres_discharge - pres_charge) / self.oils[self.oil]['bulk']
+        vol_pump = (1 - (pres_discharge - pres_charge) / oils[self.oil]['bulk']
                     - leak_total / th_flow_rate_pump) * 100
         vol_motor = (1 - leak_total / th_flow_rate_pump) * 100
         vol_hsu = vol_pump * vol_motor * 1e-2
         mech_pump = (1 - A * np.exp(
-            - Bp * self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            - Bp * oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
             - Cp * np.sqrt(
-            self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            oils[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
             - D / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) * 100
         mech_motor = (1 - A * np.exp(
-            - Bm * self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            - Bm * oils[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
             - Cm * np.sqrt(
-            self.oils[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
+            oils[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5))
             - D / (self.swash * (pres_discharge * 1e5 - pres_charge * 1e5) * 1e-5)) * 100
         mech_hsu = mech_pump * mech_motor * 1e-2
         total_pump = vol_pump * mech_pump * 1e-2
@@ -148,18 +156,20 @@ class HSU:
         eff_hsu = [[self.efficiency(speed[i], pressure[j])['HSU']['Total']
                     for i in range(len(speed))]
                    for j in range(len(pressure))]
-        return eff_hsu
+        fig = go.Figure(
+            data=go.Contour(z=eff_hsu, x=speed, y=pressure, colorscale='Portland', contours_coloring='lines',
+                            contours=dict(
+                                coloring='lines', start=50, end=90, showlabels=True, labelfont=dict(size=12, color='black',))))
+        fig.layout.plot_bgcolor = '#fff'
+        fig.layout.paper_bgcolor = '#fff'
+        if self.engine and self.input_gear_ratio:
+            fig.add_trace(go.Scatter(x=self.input_gear_ratio*np.asarray(
+                engines[self.engine]['speed']),
+                y=np.asarray(engines[self.engine]['torque'])/self.input_gear_ratio))
+        fig.show()
 
 
 if __name__ == '__main__':
-    NGLAV = HSU(440)
-    NGLAV.size()
-    map = NGLAV.plot_eff_map(3000, 500)
-    fig = go.Figure(
-        data=go.Contour(z=map,
-                        contours=dict(coloring='heatmap',
-                                      showlabels=True,                                         labelfont=dict(size=12, color='white',)
-                                      )
-                        )
-    )
-    fig.show()
+    hsu = HSU(440)
+    hsu.size()
+    hsu.plot_eff_map(3000, 500)
