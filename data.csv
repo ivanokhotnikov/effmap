@@ -1,4 +1,4 @@
-#,Type,Manufacturer,Displacement,Speed,Mass
+#,type,manufacturer,displacement,speed,mass
 1,Pump,Rexroth,28,4250,29
 2,Pump,Rexroth,40,4000,31
 3,Pump,Rexroth,56,3600,38
