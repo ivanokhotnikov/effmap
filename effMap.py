@@ -2,16 +2,18 @@ import os
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from sklearn import metrics
-from sklearn.model_selection import train_test_split
+from scipy.optimize import curve_fit
+from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
+from sklearn.metrics import r2_score, mean_squared_error
 
 
 def load_oils():
     """Loads the dictionary of available oils.
 
-    Each oil inludes its mechanical properties in a value. The properties are kinematic and dynamic viscosities in cSt and Pas respectively, density in kg/cub.m and bulk modulus in bar, all at 100C.
+    Each oil includes its mechanical properties in a value. The properties are kinematic and dynamic viscosities in cSt and Pas respectively, density in kg/cub.m and bulk modulus in bar, all at 100C.
     """
     return {'15w40': {'visc_kin': 13.65, 'density': 829.1, 'visc_dyn': 13.65 * 829.1 / 1e6, 'bulk': 15000},
             '5w30': {'visc_kin': 12.08, 'density': 820, 'visc_dyn': 12.08 * 820 / 1e6, 'bulk': 15000},
@@ -37,26 +39,44 @@ class RegressionModel:
     def __init__(self, data, machine_type='pump', data_type='speed'):
         self.data = data[data['type'] ==
                          f'{machine_type.capitalize()}']
-        self.speed_fit = False
-        self.mass_fit = False
-        self.order = 0
+        self.fitted = False
+        self.model = None
+        self.coefs = None
         self.machine_type = machine_type
         self.data_type = data_type
 
-    # def fit(self, order=3):
-    #     self.order = order
-    #     data = self.data[self.data['type'] ==
-    #                      f'{self.machine_type.capitalize()}']
-    #     data.sample(data.shape[0])
-    #     x = data['displacement'].values
-    #     y = data[self.data_type].values
-    #     X_train, X_test, y_train, y_test = train_test_split(
-    #         x, y, test_size=0.2, random_state=0)
-    #     poly_reg = PolynomialFeatures(degree=order)
-    #     X_poly = poly_reg.fit_transform(X_train)
-    #     poly_reg.fit(X_poly, y_train)
+    def fit(self):
+        data = self.data[self.data['type'] ==
+                         f'{self.machine_type.capitalize()}'].sample(frac=1)
+        x = data['displacement'].values
+        y = data[self.data_type].values
+        x_train, x_test, y_train, y_test = train_test_split(
+            x, y, test_size=0.2,
+            random_state=np.random.RandomState(np.random.randint(1000)),
+            shuffle=True)
 
-    def plot(self, show_figure=True, save_figure=False):
+        def reg_model(x, *args):
+            return args[0] * np.exp(-args[1] * x) + args[2]
+
+        guess = [1e2, 1e-2, 1e2]
+        model_coef, model_cov = curve_fit(
+            reg_model, x_train, y_train, guess)
+        self.fitted = True
+        self.model = reg_model
+        self.coefs = model_coef
+
+    def plot(self, show_figure=True, save_figure=False, format='pdf'):
+        """Plots and optionally saves the catalogue data.
+
+        Parameters
+        ----------
+        show_figures: bool, optional
+            The flag for saving the figure, default False.
+        save_figures: bool, optional
+            The flag for saving the figure, default True.
+        format : str, optional
+            The file extension in which the figure will be saved, default 'pdf'.
+        """
         fig = go.Figure()
         for idx, i in enumerate(set(self.data['manufacturer'])):
             fig.add_scatter(
@@ -104,15 +124,27 @@ class RegressionModel:
             paper_bgcolor='rgba(255,255,255,0)',
             showlegend=True,
         )
-        if self.speed_fit and self.data_type == 'speed':
-            pass
-        if self.mass_fit and self.data_type == 'mass':
+        if self.fitted and self.data_type == 'speed':
+            data = self.data[self.data['type'] ==
+                             f'{self.machine_type.capitalize()}']
+            x = data['displacement'].values
+            x_cont = np.linspace(.2*np.amin(x), 1.2*np.amax(x), num=100)
+            fig.add_scatter(
+                x=x_cont,
+                y=self.model(x_cont, *self.coefs),
+                mode='lines',
+                name='Regression model',
+                line=dict(
+                    width=.1
+                ),
+            )
+        if self.fitted and self.data_type == 'mass':
             pass
         if save_figure:
             if not os.path.exists('images'):
                 os.mkdir('images')
             fig.write_image(
-                f'images/eda_{self.machine_type}_{self.data_type}.png')
+                f'images/eda_{self.machine_type}_{self.data_type}.{format}')
         if show_figure:
             fig.show()
 
@@ -203,30 +235,30 @@ class HSU:
             Eccentricity ratio of a psiton in a bore, default 1.
 
         """
-        OIL = load_oils()
+        OILS = load_oils()
         leak_block = np.pi * h1 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
-            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * OIL[self.oil]['visc_dyn'])
+            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * OILS[self.oil]['visc_dyn'])
         leak_shoes = (self.pistons * np.pi * h2 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) / (
-            6 * OIL[self.oil]['visc_dyn'] * np.log(self.sizes['Rs'] / self.sizes['rs'])))
+            6 * OILS[self.oil]['visc_dyn'] * np.log(self.sizes['Rs'] / self.sizes['rs'])))
         leak_piston = np.array([self.pistons * np.pi * self.sizes['d'] * h3 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
-            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * OIL[self.oil]['visc_dyn'])
+            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * OILS[self.oil]['visc_dyn'])
             for ii in np.arange(self.pistons)])
         leak_pistons = sum(leak_piston)
         leak_total = sum((leak_block, leak_shoes, leak_pistons))
         th_flow_rate_pump = speed_pump * self.displ / 6e7
-        vol_pump = (1 - (pressure_discharge - pressure_charge) / OIL[self.oil]['bulk']
+        vol_pump = (1 - (pressure_discharge - pressure_charge) / OILS[self.oil]['bulk']
                     - leak_total / th_flow_rate_pump) * 100
         vol_motor = (1 - leak_total / th_flow_rate_pump) * 100
         vol_hsu = vol_pump * vol_motor * 1e-2
         mech_pump = (1 - A * np.exp(
-            - Bp * OIL[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - Bp * OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - Cp * np.sqrt(
-            OIL[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
         mech_motor = (1 - A * np.exp(
-            - Bm * OIL[self.oil]['visc_dyn'] * 1e3 * speed_pump * vol_hsu * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - Bm * OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump * vol_hsu * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - Cm * np.sqrt(
-            OIL[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
         mech_hsu = mech_pump * mech_motor * 1e-2
         total_pump = vol_pump * mech_pump * 1e-2
@@ -250,7 +282,7 @@ class HSU:
                              'hsu': {'volumetric': vol_hsu, 'mechanical': mech_hsu, 'total': total_hsu}}
         return self.efficiencies
 
-    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_comp=480, res=100, show_figures=True, save_figures=False):
+    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_comp=480, res=100, show_figures=True, save_figures=False, format='pdf'):
         """Plots and optionally saves the HSU efficiency maps.
 
         Parameters
@@ -267,10 +299,12 @@ class HSU:
             The torque limiter, or compensator, setting in bar, default 480 bar.
         res: float, optional
             The resolution of the map. The number of efficiency samples calculated per axis, default = 100.
-        save_figures: bool, optional
-            The flag for saving the figure, default True.
         show_figures: bool, optional
             The flag for saving the figure, default False.
+        save_figures: bool, optional
+            The flag for saving the figure, default True.
+        format : str, optional
+            The file extension in which the figure will be saved, default 'pdf'.
         """
         speed = np.linspace(min_speed_pump, max_speed_pump, res)
         pressure = np.linspace(min_pressure_discharge,
@@ -408,6 +442,8 @@ class HSU:
                     range=[np.amin(torque_pump), np.amax(torque_pump)],
                     overlaying='y',
                     side='right',
+                    showline=True,
+                    linecolor='black',
                 ),
                 yaxis=dict(
                     range=[np.amin(pressure), np.amax(pressure)]),
@@ -417,21 +453,22 @@ class HSU:
         if save_figures:
             if not os.path.exists('images'):
                 os.mkdir('images')
-            fig.write_image(f'images/eff_map_{self.displ}.png')
+            fig.write_image(f'images/eff_map_{self.displ}.{format}')
         if show_figures:
             fig.show()
 
 
 if __name__ == '__main__':
     hsu = HSU(440)
-    hsu.plot_eff_maps(2300, 650, save_figures=True)
+    hsu.plot_eff_maps(2300, 650)
     df = pd.read_csv('data.csv', index_col='#')
     machine_type = ('pump', 'motor')
-    data_type = ('speed', 'mass')
+    data_type = ('speed',)  # , 'mass')
     models = {}
     for i in machine_type:
         for j in data_type:
             models[f'{i}_{j}'] = RegressionModel(
                 df, machine_type=i, data_type=j)
-            models[f'{i}_{j}'].plot(save_figure=True)
-            # models[f'{i}_{j}'].fit(i, j, order=3)
+            # models[f'{i}_{j}'].plot()
+            models[f'{i}_{j}'].fit()
+            models[f'{i}_{j}'].plot()
