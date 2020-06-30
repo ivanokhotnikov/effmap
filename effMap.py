@@ -3,14 +3,11 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from scipy.optimize import curve_fit
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
 from sklearn.model_selection import train_test_split
-from sklearn.pipeline import make_pipeline
 from sklearn.metrics import r2_score, mean_squared_error
 
 
-def load_oils():
+def load_oils_dict():
     """Loads the dictionary of available oils.
 
     Each oil includes its mechanical properties in a value. The properties are kinematic and dynamic viscosities in cSt and Pas respectively, density in kg/cub.m and bulk modulus in bar, all at 100C.
@@ -20,7 +17,7 @@ def load_oils():
             '10w40': {'visc_kin': 14.61, 'density': 804.5, 'visc_dyn': 14.61 * 804.5 / 1e6, 'bulk': 15000}}
 
 
-def load_engines():
+def load_engines_dict():
     """Loads the dictionary of available engines.
 
     For each key - engine name, the value is a dictionary with a performance curve and pivot speeds. A performance curve is in a form lists of engine speed in rpm, torque in Nm and power in kW.
@@ -36,16 +33,62 @@ def load_engines():
 
 
 class RegressionModel:
+    """Creates the rergession model object.
+
+    The object performs curve fitting to the provided data using the `reg_func` target function with the ordinary least square method.
+
+    Attributes
+    ----------
+    data: DataFrame
+        The pd.DataFrame object containing the pump and motor speed and mass data.
+    fitted: boolean
+        The flag to indicate whether fitting was performed.
+    machine_type: {'pump', 'motor'}, optional
+        The string specifying a machine type under consideration, default 'pump'.
+    data_type: {'speed', 'mass'}, optional
+        The string specifying a data type, deafult 'speed'.
+
+    """
+
     def __init__(self, data, machine_type='pump', data_type='speed'):
         self.data = data[data['type'] ==
                          f'{machine_type.capitalize()}']
         self.fitted = False
-        self.model = None
+        self.model = self.reg_func
         self.coefs = None
+        self.cov = None
         self.machine_type = machine_type
         self.data_type = data_type
+        self.r2 = None
+        self.rmse = None
+
+    def reg_func(self, x, *args):
+        """Specifies the regression target function.
+
+        Based on the data_type in the `data_type` class attribute, the function chooses between linear-exponential or imple linear models.
+
+        Parameters
+        ----------
+        x: ndarray
+            The function variable.
+        *args: tuple
+            The tuple with the coefficients of the regression model.
+
+        Returns
+        -------
+        function
+            The target regression function.
+        """
+        if self.data_type == 'speed':
+            return args[0] * np.exp(-args[1] * x) + args[2]
+        if self.data_type == 'mass':
+            return args[0] * x + args[1]
 
     def fit(self):
+        """Fits the target regression model to the provided data with the ordinary least square method nd updated the class attributes accordingly.
+
+        Fitting quality is defined by R^2 and the root-mean-square metrics.
+        """
         data = self.data[self.data['type'] ==
                          f'{self.machine_type.capitalize()}'].sample(frac=1)
         x = data['displacement'].values
@@ -54,19 +97,21 @@ class RegressionModel:
             x, y, test_size=0.2,
             random_state=np.random.RandomState(np.random.randint(1000)),
             shuffle=True)
-
-        def reg_model(x, *args):
-            return args[0] * np.exp(-args[1] * x) + args[2]
-
-        guess = [1e2, 1e-2, 1e2]
-        model_coef, model_cov = curve_fit(
-            reg_model, x_train, y_train, guess)
+        guess_speed = [1e3, 1e-3, 1e3]
+        guess_mass = [1, 1]
+        if self.data_type == 'speed':
+            self.coefs, self.cov = curve_fit(
+                self.reg_func, x_train, y_train, guess_speed)
+        elif self.data_type == 'mass':
+            self.coefs, self.cov = curve_fit(
+                self.reg_func, x_train, y_train, guess_mass)
+        self.r2 = r2_score(y_test, self.reg_func(x_test, *self.coefs))
+        self.rmse = np.sqrt(mean_squared_error(
+            y_test, self.reg_func(x_test, *self.coefs)))
         self.fitted = True
-        self.model = reg_model
-        self.coefs = model_coef
 
     def plot(self, show_figure=True, save_figure=False, format='pdf'):
-        """Plots and optionally saves the catalogue data.
+        """Plots and optionally saves the catalogue data alonoe or the cataloue data and the regression model if fitting was performed.
 
         Parameters
         ----------
@@ -124,7 +169,7 @@ class RegressionModel:
             paper_bgcolor='rgba(255,255,255,0)',
             showlegend=True,
         )
-        if self.fitted and self.data_type == 'speed':
+        if self.fitted:
             data = self.data[self.data['type'] ==
                              f'{self.machine_type.capitalize()}']
             x = data['displacement'].values
@@ -135,11 +180,29 @@ class RegressionModel:
                 mode='lines',
                 name='Regression model',
                 line=dict(
-                    width=.1
+                    width=1
                 ),
             )
-        if self.fitted and self.data_type == 'mass':
-            pass
+            fig.add_scatter(
+                x=x_cont,
+                y=self.model(x_cont, *self.coefs)+self.rmse,
+                mode='lines',
+                name='Upper limit',
+                line=dict(
+                    width=1,
+                    dash='dash'
+                ),
+            )
+            fig.add_scatter(
+                x=x_cont,
+                y=self.model(x_cont, *self.coefs)-self.rmse,
+                mode='lines',
+                name='Lower limit',
+                line=dict(
+                    width=1,
+                    dash='dash'
+                ),
+            )
         if save_figure:
             if not os.path.exists('images'):
                 os.mkdir('images')
@@ -149,10 +212,10 @@ class RegressionModel:
             fig.show()
 
 
-class HSU:
-    """Creates the HSU object.
+class HST:
+    """Creates the HST object.
 
-    Parameters
+    Attributes
     ----------
     disp: int
         The displacement of an axial-piston machine in cc/rev
@@ -164,9 +227,13 @@ class HSU:
         The oil choice from the dictionary of available oils, default '15w40'. Each oil is a dictionary with the following structure: {'visc_kin': float, 'density': float, 'visc_dyn': float, 'bulk': float}. Here 'visc_kin' is the kinematic viscosity of the oil in cSt, 'density' is its density in kg/cub.m, 'visc_dyn' is the dynamic viscosity in Pa s, 'bulk' is the oil bulk modulus in bar. All properties are at 100C.
     engine: {'engine_1', 'engine_2'}, optional
         The engine choice from the dictionary of engines, default 'engine_1'. Each engine is a dictionary with the following structure: {'speed': list, 'torque': list, 'power': list}. Lists must be of the same length.
+    input_gear_ratio: float, optional
+        The gear ratio of a gear train connecting the HST with an engine, default 0.75, which corresponds to a reduction gear set.
+    max_power_input: int, optional
+        The maximum mechanical power in kW the HST is meant to transmit, i.e. to take as an input, default 682 kW.
     """
 
-    def __init__(self, disp, swash=18, pistons=9, oil='15w40', engine='engine_1', input_gear_ratio=.75, max_power_input=682):
+    def __init__(self, disp, swash=18, pistons=9, oil='15w40', engine='engine_1', input_gear_ratio=.75, max_power_input=680):
         self.displ = disp
         self.swash = swash
         self.pistons = pistons
@@ -180,7 +247,6 @@ class HSU:
         self.max_power_input = max_power_input
         self.pump_speed_limit = None
         self.sizing()
-        # self.speed_limit()
 
     def sizing(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
         """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
@@ -212,17 +278,18 @@ class HSU:
         self.sizes = {'d': dia_piston, 'D': pcd, 'h': stroke, 'eng': min_engagement,
                       'rbo': rad_ext_int, 'Rbo': rad_ext_ext, 'Rbi': rad_int_ext, 'rbi': rad_int_int, 'rs': rad_int_shoe, 'Rs': rad_ext_shoe}
 
-    def predict_speed_limit(self):
+    def predict_speed_limit(self, RegModel):
         """Defines the pump speed limit."""
-        pass
+        self.pump_speed_limit = [RegModel.reg_func(
+            self.displ, *RegModel.coefs)+i for i in (-RegModel.rmse, 0, +RegModel.rmse)]
 
     def efficiency(self, speed_pump, pressure_discharge, pressure_charge=25.0, A=.17, Bp=1.0, Bm=.5, Cp=.001, Cm=.005, D=125, h1=15e-6, h2=15e-6, h3=25e-6, eccentricity=1):
-        """Defines efficiencies and performance characteristics of the HSU made of same-displacement axial-piston machines.
+        """Defines efficiencies and performance characteristics of the HST made of same-displacement axial-piston machines.
 
         Parameters
         ----------
         speed_pump: int
-            The HSU input, or pump, speed in rpm.
+            The HST input, or pump, speed in rpm.
         pressure_discharge: int
             The discharge pressures in bar.
         pressure_charge: int, optional
@@ -234,8 +301,16 @@ class HSU:
         eccentricity: float, optional
             Eccentricity ratio of a psiton in a bore, default 1.
 
+        Returns
+        --------
+        out: dict
+            The dictionary containing as values efficiencies of each machine as well as of HST in per cents. The dictionary structure is as following:
+            {'pump': {'volumetric': float, 'mechanical': float, 'total': float},
+            'motor': {'volumetric': float, 'mechanical': float, 'total': float},
+            'hst': {'volumetric': float, 'mechanical': float, 'total': float}}
+
         """
-        OILS = load_oils()
+        OILS = load_oils_dict()
         leak_block = np.pi * h1 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
             1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * OILS[self.oil]['visc_dyn'])
         leak_shoes = (self.pistons * np.pi * h2 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) / (
@@ -249,41 +324,39 @@ class HSU:
         vol_pump = (1 - (pressure_discharge - pressure_charge) / OILS[self.oil]['bulk']
                     - leak_total / th_flow_rate_pump) * 100
         vol_motor = (1 - leak_total / th_flow_rate_pump) * 100
-        vol_hsu = vol_pump * vol_motor * 1e-2
+        vol_hst = vol_pump * vol_motor * 1e-2
         mech_pump = (1 - A * np.exp(
             - Bp * OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - Cp * np.sqrt(
             OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
         mech_motor = (1 - A * np.exp(
-            - Bm * OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump * vol_hsu * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - Bm * OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump * vol_hst * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - Cm * np.sqrt(
-            OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hsu * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            OILS[self.oil]['visc_dyn'] * 1e3 * speed_pump*vol_hst * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
-        mech_hsu = mech_pump * mech_motor * 1e-2
+        mech_hst = mech_pump * mech_motor * 1e-2
         total_pump = vol_pump * mech_pump * 1e-2
         total_motor = vol_motor * mech_motor * 1e-2
-        total_hsu = total_pump * total_motor * 1e-2
+        total_hst = total_pump * total_motor * 1e-2
         torque_pump = (pressure_discharge * 1e5 - pressure_charge * 1e5) * \
             self.displ * 1e-6 / (2 * np.pi * mech_pump * 1e-2)
         torque_motor = (pressure_discharge * 1e5 - pressure_charge * 1e5) * self.displ * \
-            1e-6 / (2 * np.pi * mech_pump * 1e-2) * (mech_hsu * 1e-2)
+            1e-6 / (2 * np.pi * mech_pump * 1e-2) * (mech_hst * 1e-2)
         power_pump = torque_pump * speed_pump * np.pi / 30 * 1e-3
-        power_motor = power_pump * total_hsu * 1e-2
-        speed_motor = speed_pump * vol_hsu * 1e-2
+        power_motor = power_pump * total_hst * 1e-2
+        speed_motor = speed_pump * vol_hst * 1e-2
         self.performance = {'pump': {'speed': speed_pump, 'torque': torque_pump, 'power': power_pump},
                             'motor': {'speed': speed_motor, 'torque': torque_motor, 'power': power_motor},
                             'delta': {'speed': speed_pump - speed_motor, 'torque': torque_pump - torque_motor, 'power': power_pump - power_motor},
                             'charge pressure': pressure_charge, 'discharge pressure': pressure_discharge}
-        # self.leaks = {'Machine': {'Block': leak_block, 'Shoes': leak_shoes, 'Pistons': leak_pistons, 'Total': leak_total},
-        #               'HSU': {'Block': 2*leak_block, 'Shoes': 2*leak_shoes, 'Pistons': 2*leak_pistons, 'Total': 2*leak_total}}
         self.efficiencies = {'pump': {'volumetric': vol_pump, 'mechanical': mech_pump, 'total': total_pump},
                              'motor': {'volumetric': vol_motor, 'mechanical': mech_motor, 'total': total_motor},
-                             'hsu': {'volumetric': vol_hsu, 'mechanical': mech_hsu, 'total': total_hsu}}
+                             'hst': {'volumetric': vol_hst, 'mechanical': mech_hst, 'total': total_hst}}
         return self.efficiencies
 
-    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_comp=480, res=100, show_figures=True, save_figures=False, format='pdf'):
-        """Plots and optionally saves the HSU efficiency maps.
+    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=100, show_figures=True, save_figures=False, format='pdf'):
+        """Plots and optionally saves the HST efficiency maps.
 
         Parameters
         ----------
@@ -295,8 +368,8 @@ class HSU:
             The lower limit of the input speed range on the map in rpm, default nmin = 1000 rpm.
         min_pressure_discharge: int, optional
             The lower limit of the discharge pressure range on the map in bar, default pmin = 100 bar.
-        pressure_comp: int, optional
-            The torque limiter, or compensator, setting in bar, default 480 bar.
+        pressure_lim: int, optional
+            The torque limiter setting in bar, default 480 bar.
         res: float, optional
             The resolution of the map. The number of efficiency samples calculated per axis, default = 100.
         show_figures: bool, optional
@@ -309,8 +382,8 @@ class HSU:
         speed = np.linspace(min_speed_pump, max_speed_pump, res)
         pressure = np.linspace(min_pressure_discharge,
                                max_pressure_discharge, res)
-        eff_hsu = np.array(
-            [[self.efficiency(i, j, pressure_charge=pressure_charge)['hsu']['total']
+        eff_hst = np.array(
+            [[self.efficiency(i, j, pressure_charge=pressure_charge)['hst']['total']
               for i in speed]
              for j in pressure]
         )
@@ -325,13 +398,13 @@ class HSU:
         fig = go.Figure()
         fig.add_trace(
             go.Contour(
-                z=eff_hsu,
+                z=eff_hst,
                 x=speed,
                 y=pressure,
                 colorscale='Portland',
                 showscale=False,
                 contours_coloring='lines',
-                name='Total HSU efficiency, %',
+                name='Total HST efficiency, %',
                 contours=dict(
                     coloring='lines',
                     start=50,
@@ -344,11 +417,11 @@ class HSU:
             ),
         )
         fig.update_layout(
-            title='HSU efficiency map and the engine torque curve',
+            title='HST efficiency map and the engine torque curve',
             width=700,
             height=600,
             xaxis=dict(
-                title='HSU input speed, rpm',
+                title='HST input speed, rpm',
                 showline=True,
                 linecolor='black',
                 mirror=True,
@@ -358,7 +431,7 @@ class HSU:
                 linewidth=0.5,
             ),
             yaxis=dict(
-                title='HSU discharge pressure, bar',
+                title='HST discharge pressure, bar',
                 showline=True,
                 linecolor='black',
                 mirror=True,
@@ -366,12 +439,16 @@ class HSU:
                 gridcolor='LightGray',
                 gridwidth=0.25,
                 linewidth=0.5,
+                range=[min(pressure), max(pressure)]
             ),
             plot_bgcolor='rgba(255,255,255,1)',
             paper_bgcolor='rgba(255,255,255,0)',
+            showlegend=True,
+            legend_orientation='h',
+            legend=dict(x=0, y=-.1)
         )
         if self.engine:
-            ENGINES = load_engines()
+            ENGINES = load_engines_dict()
             pressure_pivot = self.max_power_input * 1e3 * 30 / np.pi / \
                 ENGINES[self.engine]['pivot speed'] / self.input_gear_ratio * 2 * np.pi / \
                 self.displ / 1e-6 / 1e5 * \
@@ -392,7 +469,7 @@ class HSU:
                 line=dict(
                     color='indianred',
                     width=1),
-                yaxis='y2'
+                yaxis='y2',
             )
             fig.add_scatter(
                 x=speed,
@@ -404,10 +481,10 @@ class HSU:
                     color='steelblue',
                     width=1),
                 yaxis='y2'
-            ),
+            )
             fig.add_scatter(
                 x=[self.input_gear_ratio *
-                   ENGINES[self.engine]['pivot speed']],
+                    ENGINES[self.engine]['pivot speed']],
                 y=[performance_pivot['pump']['torque']],
                 name='Pivot turn',
                 mode='markers',
@@ -420,12 +497,12 @@ class HSU:
                     ),
                 ),
                 yaxis='y2'
-            ),
+            )
             fig.add_scatter(
                 x=[np.amin(speed), np.amax(speed)],
-                y=[pressure_comp, pressure_comp],
+                y=[pressure_lim, pressure_lim],
                 mode='lines',
-                name='Compensator setting',
+                name='Limiter setting',
                 line=dict(
                     color='darkseagreen',
                     dash='dash',
@@ -438,7 +515,7 @@ class HSU:
                     range=[min_speed_pump, max_speed_pump],
                 ),
                 yaxis2=dict(
-                    title='HSU input torque, Nm',
+                    title='HST input torque, Nm',
                     range=[np.amin(torque_pump), np.amax(torque_pump)],
                     overlaying='y',
                     side='right',
@@ -447,9 +524,19 @@ class HSU:
                 ),
                 yaxis=dict(
                     range=[np.amin(pressure), np.amax(pressure)]),
-                showlegend=True,
-                legend_orientation='h',
-                legend=dict(x=0, y=-.1))
+            )
+        if self.pump_speed_limit:
+            for i in zip(self.pump_speed_limit, ('Min rated speed', 'Rated speed', 'Max rated speed')):
+                fig.add_scatter(
+                    x=[i[0], i[0]],
+                    y=[np.amin(pressure), np.amax(pressure)],
+                    mode='lines',
+                    name=i[1],
+                    line=dict(
+                        dash='dash',
+                        width=1),
+                    yaxis='y1',
+                )
         if save_figures:
             if not os.path.exists('images'):
                 os.mkdir('images')
@@ -459,16 +546,16 @@ class HSU:
 
 
 if __name__ == '__main__':
-    hsu = HSU(440)
-    hsu.plot_eff_maps(2300, 650)
     df = pd.read_csv('data.csv', index_col='#')
     machine_type = ('pump', 'motor')
-    data_type = ('speed',)  # , 'mass')
+    data_type = ('speed', 'mass')
     models = {}
     for i in machine_type:
         for j in data_type:
             models[f'{i}_{j}'] = RegressionModel(
                 df, machine_type=i, data_type=j)
-            # models[f'{i}_{j}'].plot()
             models[f'{i}_{j}'].fit()
             models[f'{i}_{j}'].plot()
+    hst = HST(440)
+    hst.predict_speed_limit(models['pump_speed'])
+    hst.plot_eff_maps(2300, 650)
