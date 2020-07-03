@@ -1,9 +1,11 @@
 import os
 import numpy as np
 import pandas as pd
+import streamlit as st
 import plotly.graph_objects as go
 from scipy.optimize import curve_fit
-from sklearn.model_selection import train_test_split
+from sklearn.base import BaseEstimator
+from sklearn.model_selection import train_test_split, cross_validate
 from sklearn.metrics import r2_score, mean_squared_error
 
 
@@ -32,7 +34,7 @@ def load_engines_dict():
                          'pivot speed': 2200}}
 
 
-class RegressionModel:
+class RegressionModel(BaseEstimator):
     """Creates the rergession model object.
 
     The object performs curve fitting to the provided data using the `reg_func` target function with the ordinary least square method.
@@ -47,7 +49,6 @@ class RegressionModel:
         The string specifying a machine type under consideration, default 'pump'.
     data_type: {'speed', 'mass'}, optional
         The string specifying a data type, deafult 'speed'.
-
     """
 
     def __init__(self, data, machine_type='pump', data_type='speed'):
@@ -91,8 +92,8 @@ class RegressionModel:
         """
         data = self.data[self.data['type'] ==
                          f'{self.machine_type.capitalize()}'].sample(frac=1)
-        x = data['displacement'].values
-        y = data[self.data_type].values
+        x = data['displacement'].to_numpy(dtype='float64')
+        y = data[self.data_type].to_numpy(dtype='float64')
         x_train, x_test, y_train, y_test = train_test_split(
             x, y, test_size=0.2,
             random_state=np.random.RandomState(np.random.randint(1000)),
@@ -110,20 +111,22 @@ class RegressionModel:
             y_test, self.reg_func(x_test, *self.coefs)))
         self.fitted = True
 
-    def plot(self, show_figure=True, save_figure=False, format='pdf'):
+    def plot(self, show_figure=True, save_figure=False, format='pdf', in_app=False):
         """Plots and optionally saves the catalogue data alonoe or the cataloue data and the regression model if fitting was performed.
 
         Parameters
         ----------
-        show_figures: bool, optional
+        show_figure: bool, optional
             The flag for saving the figure, default False.
         save_figures: bool, optional
             The flag for saving the figure, default True.
         format : str, optional
             The file extension in which the figure will be saved, default 'pdf'.
+        in_app: bool, optional
+            The flag allowing to show the plots in a browser.
         """
         fig = go.Figure()
-        for idx, i in enumerate(set(self.data['manufacturer'])):
+        for idx, i in enumerate(self.data['manufacturer'].unique()):
             fig.add_scatter(
                 x=self.data['displacement'][self.data['manufacturer'] == i],
                 y=self.data[self.data_type][self.data['manufacturer'] == i],
@@ -140,8 +143,8 @@ class RegressionModel:
             )
         fig.update_layout(
             title=f'EDA of the {self.machine_type} {self.data_type} data',
-            width=700,
-            height=500,
+            width=800,
+            height=600,
             xaxis=dict(
                 title=f'{self.machine_type.capitalize()} displacement, cc/rev',
                 showline=True,
@@ -210,6 +213,10 @@ class RegressionModel:
                 f'images/eda_{self.machine_type}_{self.data_type}.{format}')
         if show_figure:
             fig.show()
+        if in_app:
+            st.title(
+                f'{self.machine_type.capitalize()} {self.data_type} data and regression')
+            st.write(fig)
 
 
 class HST:
@@ -355,7 +362,7 @@ class HST:
                              'hst': {'volumetric': vol_hst, 'mechanical': mech_hst, 'total': total_hst}}
         return self.efficiencies
 
-    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=100, show_figures=True, save_figures=False, format='pdf'):
+    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=100, show_figure=True, save_figures=False, format='pdf', in_app=False):
         """Plots and optionally saves the HST efficiency maps.
 
         Parameters
@@ -372,12 +379,14 @@ class HST:
             The torque limiter setting in bar, default 480 bar.
         res: float, optional
             The resolution of the map. The number of efficiency samples calculated per axis, default = 100.
-        show_figures: bool, optional
-            The flag for saving the figure, default False.
+        show_figure: bool, optional
+            The flag for saving the figure, default True.
         save_figures: bool, optional
             The flag for saving the figure, default True.
         format : str, optional
             The file extension in which the figure will be saved, default 'pdf'.
+        in_app: bool, optional
+            The flag allowing to show the plots in a browser.
         """
         speed = np.linspace(min_speed_pump, max_speed_pump, res)
         pressure = np.linspace(min_pressure_discharge,
@@ -418,8 +427,8 @@ class HST:
         )
         fig.update_layout(
             title='HST efficiency map and the engine torque curve',
-            width=700,
-            height=600,
+            width=800,
+            height=700,
             xaxis=dict(
                 title='HST input speed, rpm',
                 showline=True,
@@ -541,21 +550,54 @@ class HST:
             if not os.path.exists('images'):
                 os.mkdir('images')
             fig.write_image(f'images/eff_map_{self.displ}.{format}')
-        if show_figures:
+        if show_figure:
             fig.show()
+        if in_app:
+            st.title('Efficiency map')
+            st.write(fig)
 
 
 if __name__ == '__main__':
     df = pd.read_csv('data.csv', index_col='#')
-    machine_type = ('pump', 'motor')
-    data_type = ('speed', 'mass')
+    st.sidebar.markdown('Setting up the regression model')
+    machine_type = st.sidebar.selectbox(
+        'Select a machine type:',
+        ('Pump', 'Motor'), index=0).lower()
+    data_type = st.sidebar.selectbox(
+        'Select a data type:',
+        ('Speed', 'Mass'), index=0).lower()
     models = {}
-    for i in machine_type:
-        for j in data_type:
-            models[f'{i}_{j}'] = RegressionModel(
-                df, machine_type=i, data_type=j)
-            models[f'{i}_{j}'].fit()
-            models[f'{i}_{j}'].plot()
-    hst = HST(440)
-    hst.predict_speed_limit(models['pump_speed'])
-    hst.plot_eff_maps(2300, 650)
+    if machine_type and data_type:
+        models['_'.join((machine_type, data_type))] = RegressionModel(
+            df, machine_type=machine_type, data_type=data_type)
+        models['_'.join((machine_type, data_type))].fit()
+        rmse = np.round(
+            models['_'.join((machine_type, data_type))].rmse, decimals=2)
+        models['_'.join((machine_type, data_type))].plot(
+            show_figure=False, in_app=True)
+        if data_type == 'speed':
+            st.write(f'RMSE = {rmse} rpm')
+        if data_type == 'mass':
+            st.write(f'RMSE = {rmse} kg')
+    if 'pump_speed' in models and models['pump_speed'].fitted:
+        st.sidebar.markdown('Setting up the efficiency map')
+        oil = st.sidebar.selectbox(
+            'Select an oil:',
+            ('15w40', '5w30', '10w40'))
+        max_displ = st.sidebar.slider(
+            'Select a displcement', min_value=100, max_value=800, value=440, step=5)
+        max_power = st.sidebar.slider(
+            'Select a max power', min_value=400, max_value=800, value=685, step=5)
+        gear_ratio = st.sidebar.slider(
+            'Select an input gear ratio', min_value=.5, max_value=2., value=.75, step=.25)
+        hst = HST(max_displ, oil=oil, max_power_input=max_power,
+                  input_gear_ratio=gear_ratio)
+        hst.predict_speed_limit(models['pump_speed'])
+        max_speed = st.sidebar.slider(
+            'Select a max speed', min_value=1000, max_value=4000, value=2400, step=100)
+        max_pressure = st.sidebar.slider('Select the max pressure',
+                                         min_value=100, max_value=800, value=650, step=50)
+        pressure_lim = st.sidebar.slider('Select the pressure limiter setting',
+                                         min_value=300, max_value=800, value=480, step=10)
+        hst.plot_eff_maps(max_speed, max_pressure, pressure_lim=pressure_lim,
+                          show_figure=False, in_app=True)
