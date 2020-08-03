@@ -7,7 +7,7 @@ from scipy.optimize import curve_fit
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split, cross_validate
 from sklearn.metrics import r2_score, mean_squared_error
-
+from sklearn.linear_model import LinearRegression
 
 def load_oils_dict():
     """Loads the dictionary of available oils.
@@ -253,7 +253,9 @@ class HST:
         self.input_gear_ratio = input_gear_ratio
         self.max_power_input = max_power_input
         self.pump_speed_limit = None
-        self.no_load = []
+        self.no_load = None
+        self.no_load_coef = None
+        self.no_load_intercept = None
 
     def sizing(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
         """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
@@ -363,10 +365,14 @@ class HST:
         return self.efficiencies
 
     def no_load_test_data(self, *args):
-        X, Y = [], []
+        X, Y = np.reshape([],(-1,1)), np.reshape([],(-1,1))
         for speed, pressure in args:
-            X.append(speed)
-            Y.append(pressure)
+            X = np.r_[X, np.reshape(speed, (-1,1))]
+            Y = np.r_[Y, np.reshape(pressure, (-1,1))]
+        lin_reg = LinearRegression()
+        lin_reg.fit(X, Y)
+        self.no_load_intercept =  lin_reg.intercept_
+        self.no_load_coef = lin_reg.coef_
 
     def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=100, show_figure=True, save_figure=False, format='pdf', in_app=False):
         """Plots and optionally saves the HST efficiency maps.
@@ -434,7 +440,7 @@ class HST:
         fig.add_scatter(
             mode='lines',
             x=speed,
-            y=40 / 225*speed + (140 - 1800 * 40 / 225),
+            y=np.reshape(self.no_load_coef, (-1,))*speed + np.reshape(self.no_load_intercept,(-1,)),
             yaxis='y1',
             name='No-load test limits',
             line=dict(
@@ -578,7 +584,7 @@ class HST:
 
 
 if __name__ == '__main__':
-    df = pd.read_csv('Data/data.csv', index_col='#')
+    df = pd.read_csv('data.csv', index_col='#')
     st.sidebar.markdown('Setting up the regression model')
     machine_type = st.sidebar.selectbox(
         'Select a machine type:',
@@ -624,10 +630,6 @@ if __name__ == '__main__':
             max_value=2.,
             value=.75,
             step=.25)
-        hst = HST(max_displ, oil=oil, max_power_input=max_power,
-                  input_gear_ratio=gear_ratio)
-        hst.sizing()
-        hst.predict_speed_limit(models['pump_speed'])
         max_speed = st.sidebar.slider(
             'Select a max speed',
             min_value=1000,
@@ -644,6 +646,11 @@ if __name__ == '__main__':
                                          max_value=800,
                                          value=480,
                                          step=10)
+        hst = HST(max_displ, oil=oil, max_power_input=max_power,
+                  input_gear_ratio=gear_ratio)
+        hst.sizing()
+        hst.predict_speed_limit(models['pump_speed'])
+        hst.no_load_test_data((1800,140),(2025,180))
         hst.plot_eff_maps(max_speed, max_pressure, pressure_lim=pressure_lim,
                           show_figure=False,
                           save_figure=True,
