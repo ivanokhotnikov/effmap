@@ -5,12 +5,16 @@ import pandas as pd
 import streamlit as st
 import lxml.html as lh
 import plotly.graph_objects as go
+from PIL import Image
+from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split, cross_validate
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.linear_model import LinearRegression
 
+
+@st.cache
 def import_oils():
     url = 'https://wiki.anton-paar.com/uk-en/engine-oil/'
     page = requests.get(url)
@@ -21,7 +25,7 @@ def import_oils():
     col = []
 
     for t in data[0]:
-        name = t.text_content().rstrip().lstrip() 
+        name = t.text_content().rstrip().lstrip()
         name = name[:name.rfind(' ')]
         col.append((name, []))
 
@@ -119,7 +123,7 @@ class RegressionModel(BaseEstimator):
             return args[0] * np.exp(-args[1] * x) + args[2]
         if self.data_type == 'mass':
             return args[0] * x + args[1]
-    
+
     def fit(self):
         """Fits the target regression model to the provided data with the ordinary least square method nd updated the class attributes accordingly.
 
@@ -146,7 +150,7 @@ class RegressionModel(BaseEstimator):
             y_test, self.reg_func(x_test, *self.coefs)))
         self.fitted = True
 
-    def plot(self, show_figure=True, save_figure=False, format='pdf'):
+    def plot(self, show_figure=False, save_figure=False, format='pdf'):
         """Plots and optionally saves the catalogue data alonoe or the cataloue data and the regression model if fitting was performed.
 
         Parameters
@@ -154,7 +158,7 @@ class RegressionModel(BaseEstimator):
         show_figure: bool, optional
             The flag for saving the figure, default False.
         save_figure: bool, optional
-            The flag for saving the figure, default True.
+            The flag for saving the figure, default False.
         format : str, optional
             The file extension in which the figure will be saved, default 'pdf'.
         in_app: bool, optional
@@ -177,7 +181,7 @@ class RegressionModel(BaseEstimator):
                 )
             )
         fig.update_layout(
-            title=f'EDA of the {self.machine_type} {self.data_type} data',
+            title=f'{self.machine_type.capitalize()} {self.data_type} data',
             width=800,
             height=600,
             xaxis=dict(
@@ -211,41 +215,22 @@ class RegressionModel(BaseEstimator):
             data = self.data[self.data['type'] ==
                              f'{self.machine_type.capitalize()}']
             x = data['displacement'].values
-            x_cont = np.linspace(.2*np.amin(x), 1.2*np.amax(x), num=100)
-            fig.add_scatter(
-                x=x_cont,
-                y=self.model(x_cont, *self.coefs),
-                mode='lines',
-                name='Regression model',
-                line=dict(
-                    width=1
-                ),
-            )
-            fig.add_scatter(
-                x=x_cont,
-                y=self.model(x_cont, *self.coefs)+self.rmse,
-                mode='lines',
-                name='Upper limit',
-                line=dict(
-                    width=1,
-                    dash='dash'
-                ),
-            )
-            fig.add_scatter(
-                x=x_cont,
-                y=self.model(x_cont, *self.coefs)-self.rmse,
-                mode='lines',
-                name='Lower limit',
-                line=dict(
-                    width=1,
-                    dash='dash'
-                ),
-            )
+            x_cont = np.linspace(.2 * np.amin(x), 1.2 * np.amax(x), num=100)
+            for i in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, self.rmse, -self.rmse)):
+                fig.add_scatter(
+                    x=x_cont,
+                    y=self.model(x_cont, *self.coefs)+i[1],
+                    mode='lines',
+                    name=i[0],
+                    line=dict(
+                        width=1,
+                        dash='dash'),
+                )
         if save_figure:
             if not os.path.exists('Images'):
                 os.mkdir('Images')
             fig.write_image(
-                f'Images/eda_{self.machine_type}_{self.data_type}.{format}')
+                f'Images/{self.machine_type}_{self.data_type}.{format}')
         if show_figure:
             fig.show()
         return fig
@@ -408,6 +393,88 @@ class HST:
         self.no_load_intercept = lin_reg.intercept_
         self.no_load_coef = lin_reg.coef_
 
+    @st.cache
+    def plot_oil(self):
+        fig = go.Figure()
+        fig.add_scatter(
+            mode='lines+markers',
+            x=self.OILS.index,
+            y=self.OILS.loc[:][self.oil, 'Dyn. Viscosity'],
+            yaxis='y1',
+            name='Dynamic viscosity, mPa s',
+            line=dict(
+                width=1,
+                color='indianred',
+                shape='spline'
+            ),
+            connectgaps=True,
+        )
+        fig.add_scatter(
+            mode='lines+markers',
+            x=self.OILS.index,
+            y=self.OILS.loc[:][self.oil, 'Kin. Viscosity'],
+            yaxis='y1',
+            name='Kinematic viscosity, cSt',
+            line=dict(
+                width=1,
+                color='navy',
+                shape='spline'
+            ),
+            connectgaps=True,
+        )
+        fig.add_scatter(
+            mode='lines+markers',
+            x=self.OILS.index,
+            y=self.OILS.loc[:][self.oil, 'Density']*1e3,
+            yaxis='y2',
+            name='Density, kg/cub.m',
+            line=dict(
+                width=1,
+                color='orange'
+            )
+        )
+        fig.update_layout(
+            title=f'Viscosity and density of {self.oil}',
+            width=800,
+            height=500,
+            xaxis=dict(
+                title='Oil temperature, degrees',
+                showline=True,
+                linecolor='black',
+                mirror=True,
+                showgrid=True,
+                gridcolor='LightGray',
+                gridwidth=0.25,
+                linewidth=0.5,
+                range=[min(self.OILS.index), max(self.OILS.index)]
+            ),
+            yaxis=dict(
+                title='Viscosity',
+                showline=True,
+                linecolor='black',
+                mirror=True,
+                showgrid=True,
+                gridcolor='LightGray',
+                gridwidth=0.25,
+                linewidth=0.5,
+                range=[0, 1500]
+            ),
+            yaxis2=dict(
+                title='Density',
+                linecolor='black',
+                mirror=True,
+                linewidth=0.5,
+                overlaying='y',
+                side='right',
+            ),
+            plot_bgcolor='rgba(255,255,255,1)',
+            paper_bgcolor='rgba(255,255,255,0)',
+            showlegend=True,
+            legend_orientation='h',
+            legend=dict(x=0, y=-.2)
+        )
+        return fig
+
     def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=100, show_figure=True, save_figure=False, format='pdf'):
         """Plots and optionally saves the HST efficiency maps.
 
@@ -485,7 +552,7 @@ class HST:
             )
         )
         fig.update_layout(
-            title=f'HST efficiency map and the engine torque curve {self.oil}',
+            title=f'HST efficiency map and the engine torque curve {self.oil} at {self.oil_temp}C',
             width=800,
             height=700,
             xaxis=dict(
@@ -616,83 +683,152 @@ class HST:
         return fig
 
 
-if __name__ == '__main__':
+def plot_catalogues():
+    st.title('Catalogue data and regressions')
     df = pd.read_csv('data.csv', index_col='#')
-    st.sidebar.markdown('Setting up the regression model')
-    machine_type = st.sidebar.selectbox(
-        'Select a machine type:',
-        ('Pump', 'Motor'), index=0).lower()
-    data_type = st.sidebar.selectbox(
-        'Select a data type:',
-        ('Speed', 'Mass'), index=0).lower()
     models = {}
-    if machine_type and data_type:
-        models['_'.join((machine_type, data_type))] = RegressionModel(
-            df, machine_type=machine_type, data_type=data_type)
-        models['_'.join((machine_type, data_type))].fit()
-        rmse = np.round(
-            models['_'.join((machine_type, data_type))].rmse, decimals=2)
-        fig = models['_'.join((machine_type, data_type))].plot(
-            save_figure=False,
-            show_figure=False)
-        st.title(f'{machine_type.capitalize()} {data_type} data and regression')
-        st.write(fig)
-    if data_type == 'speed':
-        st.write(f'RMSE = {rmse} rpm')
-    if data_type == 'mass':
-        st.write(f'RMSE = {rmse} kg')
-    if 'pump_speed' in models and models['pump_speed'].fitted:
-        st.sidebar.markdown('Setting up the efficiency map')
-        oil = st.sidebar.selectbox(
-            'Select an oil:',
-            ('SAE 15W40', 'SAE 10W40', 'SAE 10W60', 'SAE 5W40', 'SAE 0W30', 'SAE 30'))
-        oil_temp = st.sidebar.slider(
-            'Select oil temperature',
-            min_value=0,
-            max_value=100,
-            value=100,
-            step=10)
-        max_displ = st.sidebar.slider(
-            'Select a displcement',
-            min_value=100,
-            max_value=800,
-            value=440,
-            step=5)
-        max_power = st.sidebar.slider(
-            'Select a max power',
-            min_value=400,
-            max_value=800,
-            value=685,
-            step=5)
-        gear_ratio = st.sidebar.slider(
-            'Select an input gear ratio',
-            min_value=.5,
-            max_value=2.,
-            value=.75,
-            step=.25)
-        max_speed = st.sidebar.slider(
-            'Select a max speed',
-            min_value=1000,
-            max_value=4000,
-            value=2400,
-            step=100)
-        max_pressure = st.sidebar.slider('Select the max pressure',
-                                         min_value=100,
-                                         max_value=800,
-                                         value=650,
-                                         step=50)
-        pressure_lim = st.sidebar.slider('Select the pressure limiter setting',
-                                         min_value=300,
-                                         max_value=800,
-                                         value=480,
-                                         step=10)
-        hst = HST(max_displ, oil=oil, oil_temp=oil_temp, max_power_input=max_power,
-                  input_gear_ratio=gear_ratio)
-        hst.sizing()
-        hst.predict_speed_limit(models['pump_speed'])
-        hst.no_load_test_data((1800, 140), (2025, 180))
-        fig = hst.plot_eff_maps(max_speed, max_pressure, pressure_lim=pressure_lim,
-                                show_figure=False,
-                                save_figure=False)
-        st.title('Efficiency map')
-        st.write(fig)
+    fig = make_subplots(rows=2, cols=2, shared_xaxes=True,
+                        shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.07, subplot_titles=['Pump speed data', 'Pump mass data', 'Motor speed data', 'Motor mass data'])
+    for i, machine_type in enumerate(('pump', 'motor')):
+        for j, data_type in enumerate(('speed', 'mass')):
+            data = df[df['type'] ==
+                      f'{machine_type.capitalize()}']
+            model = RegressionModel(
+                data,
+                machine_type=machine_type,
+                data_type=data_type)
+            model.fit()
+            rmse = np.round(model.rmse, decimals=2)
+            x = data['displacement'].values
+            x_cont = np.linspace(.2 * np.amin(x), 1.2 * np.amax(x), num=100)
+            for l in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, model.rmse, -model.rmse)):
+                fig.add_scatter(
+                    x=x_cont,
+                    y=model.model(x_cont, *model.coefs)+l[1],
+                    mode='lines',
+                    name=l[0],
+                    line=dict(
+                        width=1,
+                        dash='dash'),
+                    row=j + 1,
+                    col=i + 1,
+                )
+            for idx, k in enumerate(data['manufacturer'].unique()):
+                fig.add_scatter(
+                    x=data['displacement'][data['manufacturer'] == k],
+                    y=data[data_type][data['manufacturer'] == k],
+                    mode='markers',
+                    name=k,
+                    marker_symbol=idx,
+                    marker=dict(
+                        size=7,
+                        line=dict(
+                            color='black',
+                            width=.5)),
+                    row=j + 1,
+                    col=i + 1)
+            fig.update_xaxes(
+                title_text=f'{machine_type.capitalize()} displacement, cc/rev',
+                showline=True,
+                linecolor='black',
+                mirror=True,
+                showgrid=True,
+                gridcolor='LightGray',
+                gridwidth=0.25,
+                linewidth=0.5,
+                range=[0, round(1.1 * max(data['displacement']), -2)],
+                row=j + 1,
+                col=i + 1
+            )
+            fig.update_yaxes(
+                title_text=f'{data_type.capitalize()}, rpm' if data_type == 'speed' else f'{data_type.capitalize()}, kg',
+                showline=True,
+                linecolor='black',
+                mirror=True,
+                showgrid=True,
+                gridcolor='LightGray',
+                gridwidth=0.25,
+                linewidth=0.5,
+                range=[0, round(1.2 * max(data[data_type]), -2)] if data_type == 'mass' else [
+                    round(.7 * min(data[data_type]), -2), round(1.2 * max(data[data_type]), -2)],
+                row=j + 1,
+                col=i + 1
+            )
+            models['_'.join((machine_type, data_type))] = model
+    fig.update_layout(
+        width=1000,
+        height=800,
+        plot_bgcolor='rgba(255,255,255,1)',
+        paper_bgcolor='rgba(255,255,255,0)',
+        showlegend=False,
+    )
+    st.write(fig)
+    return models
+
+
+def set_sidebar():
+    st.sidebar.markdown('Setting up the efficiency map')
+    oil = st.sidebar.selectbox(
+        'Select an oil:',
+        ('SAE 15W40', 'SAE 10W40', 'SAE 10W60', 'SAE 5W40', 'SAE 0W30', 'SAE 30'))
+    oil_temp = st.sidebar.slider(
+        'Select oil temperature',
+        min_value=0,
+        max_value=100,
+        value=100,
+        step=10)
+    max_displ = st.sidebar.slider(
+        'Select a displcement',
+        min_value=100,
+        max_value=800,
+        value=440,
+        step=5)
+    max_power = st.sidebar.slider(
+        'Select a max power',
+        min_value=400,
+        max_value=800,
+        value=685,
+        step=5)
+    gear_ratio = st.sidebar.slider(
+        'Select an input gear ratio',
+        min_value=.5,
+        max_value=2.,
+        value=.75,
+        step=.25)
+    max_speed = st.sidebar.slider(
+        'Select a max speed',
+        min_value=1000,
+        max_value=4000,
+        value=2400,
+        step=100)
+    max_pressure = st.sidebar.slider('Select the max pressure',
+                                     min_value=100,
+                                     max_value=800,
+                                     value=650,
+                                     step=50)
+    pressure_lim = st.sidebar.slider('Select the pressure limiter setting',
+                                     min_value=300,
+                                     max_value=800,
+                                     value=480,
+                                     step=10)
+    return oil, oil_temp, max_displ, max_power, gear_ratio, max_speed, max_pressure, pressure_lim
+
+
+def run():
+    models = plot_catalogues()
+    oil, oil_temp, max_displ, max_power, gear_ratio, max_speed, max_pressure, pressure_lim = set_sidebar()
+    hst = HST(max_displ, oil=oil, oil_temp=oil_temp, max_power_input=max_power,
+              input_gear_ratio=gear_ratio)
+    hst.sizing()
+    hst.predict_speed_limit(models['pump_speed'])
+    hst.no_load_test_data((1800, 140), (2025, 180))
+    st.title(f'Mechanical properties of oil')
+    st.write(hst.plot_oil())
+    st.title('Efficiency map')
+    st.write(hst.plot_eff_maps(max_speed, max_pressure, pressure_lim=pressure_lim,
+                               show_figure=False,
+                               save_figure=False))
+
+
+if __name__ == '__main__':
+    run()
