@@ -5,7 +5,6 @@ import pandas as pd
 import streamlit as st
 import lxml.html as lh
 import plotly.graph_objects as go
-from PIL import Image
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit
 from sklearn.base import BaseEstimator
@@ -48,16 +47,6 @@ def import_oils():
     return df
 
 
-# def load_oils():
-#     """Loads the dictionary of available oils.
-
-#     Each oil includes its mechanical properties in a value. The properties are kinematic and dynamic viscosities in cSt and Pas respectively, density in kg/cub.m and bulk modulus in bar, all at 100C.
-#     """
-#     return {'15w40': {'visc_kin': 13.65, 'density': 829.1, 'visc_dyn': 13.65 * 829.1 / 1e6, 'bulk': 15000},
-#             '5w30': {'visc_kin': 12.08, 'density': 820, 'visc_dyn': 12.08 * 820 / 1e6, 'bulk': 15000},
-#             '10w40': {'visc_kin': 14.61, 'density': 804.5, 'visc_dyn': 14.61 * 804.5 / 1e6, 'bulk': 15000}}
-
-
 def load_engines_dict():
     """Loads the dictionary of available engines.
 
@@ -94,13 +83,13 @@ class RegressionModel(BaseEstimator):
         self.data = data[data['type'] ==
                          f'{machine_type.capitalize()}']
         self.fitted = False
-        self.model = self.reg_func
+        self.model_ = self.reg_func
         self.coefs = None
         self.cov = None
         self.machine_type = machine_type
         self.data_type = data_type
-        self.r2 = None
-        self.rmse = None
+        self.r2_ = None
+        self.rmse_ = None
 
     def reg_func(self, x, *args):
         """Specifies the regression target function.
@@ -145,8 +134,8 @@ class RegressionModel(BaseEstimator):
         elif self.data_type == 'mass':
             self.coefs, self.cov = curve_fit(
                 self.reg_func, x_train, y_train, guess_mass)
-        self.r2 = r2_score(y_test, self.reg_func(x_test, *self.coefs))
-        self.rmse = np.sqrt(mean_squared_error(
+        self.r2_ = r2_score(y_test, self.reg_func(x_test, *self.coefs))
+        self.rmse_ = np.sqrt(mean_squared_error(
             y_test, self.reg_func(x_test, *self.coefs)))
         self.fitted = True
 
@@ -216,10 +205,10 @@ class RegressionModel(BaseEstimator):
                              f'{self.machine_type.capitalize()}']
             x = data['displacement'].values
             x_cont = np.linspace(.2 * np.amin(x), 1.2 * np.amax(x), num=100)
-            for i in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, self.rmse, -self.rmse)):
+            for i in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, self.rmse_, -self.rmse_)):
                 fig.add_scatter(
                     x=x_cont,
-                    y=self.model(x_cont, *self.coefs)+i[1],
+                    y=self.model_(x_cont, *self.coefs)+i[1],
                     mode='lines',
                     name=i[0],
                     line=dict(
@@ -310,7 +299,7 @@ class HST:
     def predict_speed_limit(self, RegModel):
         """Defines the pump speed limit."""
         self.pump_speed_limit = [RegModel.reg_func(
-            self.displ, *RegModel.coefs)+i for i in (-RegModel.rmse, 0, +RegModel.rmse)]
+            self.displ, *RegModel.coefs)+i for i in (-RegModel.rmse_, 0, +RegModel.rmse_)]
 
     def efficiency(self, speed_pump, pressure_discharge, pressure_charge=25.0, A=.17, Bp=1.0, Bm=.5, Cp=.001, Cm=.005, D=125, h1=15e-6, h2=15e-6, h3=25e-6, eccentricity=1):
         """Defines efficiencies and performance characteristics of the HST made of same-displacement axial-piston machines.
@@ -682,13 +671,14 @@ class HST:
             fig.show()
         return fig
 
-
 def plot_catalogues():
     st.title('Catalogue data and regressions')
     df = pd.read_csv('data.csv', index_col='#')
     models = {}
     fig = make_subplots(rows=2, cols=2, shared_xaxes=True,
-                        shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.07, subplot_titles=['Pump speed data', 'Pump mass data', 'Motor speed data', 'Motor mass data'])
+                        shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.07,
+                         subplot_titles=['Pump speed data', 'Pump mass data', 'Motor speed data', 'Motor mass data']
+                        )
     for i, machine_type in enumerate(('pump', 'motor')):
         for j, data_type in enumerate(('speed', 'mass')):
             data = df[df['type'] ==
@@ -698,13 +688,13 @@ def plot_catalogues():
                 machine_type=machine_type,
                 data_type=data_type)
             model.fit()
-            rmse = np.round(model.rmse, decimals=2)
+            rmse = np.round(model.rmse_, decimals=2)
             x = data['displacement'].values
             x_cont = np.linspace(.2 * np.amin(x), 1.2 * np.amax(x), num=100)
-            for l in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, model.rmse, -model.rmse)):
+            for l in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, model.rmse_, -model.rmse_)):
                 fig.add_scatter(
                     x=x_cont,
-                    y=model.model(x_cont, *model.coefs)+l[1],
+                    y=model.model_(x_cont, *model.coefs)+l[1],
                     mode='lines',
                     name=l[0],
                     line=dict(
@@ -756,7 +746,7 @@ def plot_catalogues():
             )
             models['_'.join((machine_type, data_type))] = model
     fig.update_layout(
-        width=1000,
+        width=800,
         height=800,
         plot_bgcolor='rgba(255,255,255,1)',
         paper_bgcolor='rgba(255,255,255,0)',
@@ -764,7 +754,6 @@ def plot_catalogues():
     )
     st.write(fig)
     return models
-
 
 def set_sidebar():
     st.sidebar.markdown('Setting up the efficiency map')
