@@ -13,40 +13,6 @@ from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.linear_model import LinearRegression
 
 
-@st.cache
-def import_oils():
-    url = 'https://wiki.anton-paar.com/uk-en/engine-oil/'
-    page = requests.get(url)
-    doc = lh.fromstring(page.content)
-    data = doc.xpath('//tr')
-    oils = [i.text_content().rstrip().lstrip().replace('-', '')
-            for i in doc.xpath('//h3')[:-2]]
-    col = []
-
-    for t in data[0]:
-        name = t.text_content().rstrip().lstrip()
-        name = name[:name.rfind(' ')]
-        col.append((name, []))
-
-    for j in data[1:]:
-        i = 0
-        for t in j.iterchildren():
-            local_data = t.text_content().lstrip().rstrip()
-            try:
-                local_data = int(local_data) if i == 0 else float(local_data)
-            except:
-                continue
-            col[i][1].append(local_data)
-            i += 1
-
-    df = pd.DataFrame(
-        {(oil, title): column[i * 11: i * 11 + 11]
-         for i, oil in enumerate(oils) for (title, column) in col[1:]},
-        index=col[0][1][:11])
-    df.index.name = index_name = col[0][0]
-    return df
-
-
 def load_engines_dict():
     """Loads the dictionary of available engines.
 
@@ -252,6 +218,7 @@ class HST:
         self.pistons = pistons
         self.oil = oil
         self.oil_temp = oil_temp
+        self.oil_data = None
         self.oil_bulk = 15000
         self.sizes = {}
         self.efficiencies = {}
@@ -264,7 +231,40 @@ class HST:
         self.no_load = None
         self.no_load_coef = None
         self.no_load_intercept = None
-        self.OILS = import_oils()
+        self.import_oils()
+
+    def import_oils(self):
+        url = 'https://wiki.anton-paar.com/uk-en/engine-oil/'
+        page = requests.get(url)
+        doc = lh.fromstring(page.content)
+        data = doc.xpath('//tr')
+        oils = [i.text_content().rstrip().lstrip().replace('-', '')
+                for i in doc.xpath('//h3')[:-2]]
+        col = []
+
+        for t in data[0]:
+            name = t.text_content().rstrip().lstrip()
+            name = name[:name.rfind(' ')]
+            col.append((name, []))
+
+        for j in data[1:]:
+            i = 0
+            for t in j.iterchildren():
+                local_data = t.text_content().lstrip().rstrip()
+                try:
+                    local_data = int(
+                        local_data) if i == 0 else float(local_data)
+                except:
+                    continue
+                col[i][1].append(local_data)
+                i += 1
+
+        df = pd.DataFrame(
+            {(oil, title): column[i * 11: i * 11 + 11]
+             for i, oil in enumerate(oils) for (title, column) in col[1:]},
+            index=col[0][1][:11])
+        df.index.name = index_name = col[0][0]
+        self.oil_data = df[self.oil]
 
     def sizing(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
         """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
@@ -329,11 +329,11 @@ class HST:
 
         """
         leak_block = np.pi * h1 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
-            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * self.OILS.loc[self.oil_temp][self.oil, 'Dyn. Viscosity'] * 1e-3)
+            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3)
         leak_shoes = (self.pistons * np.pi * h2 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) / (
-            6 * self.OILS.loc[self.oil_temp][self.oil, 'Dyn. Viscosity'] * 1e-3 * np.log(self.sizes['Rs'] / self.sizes['rs'])))
+            6 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3 * np.log(self.sizes['Rs'] / self.sizes['rs'])))
         leak_piston = np.array([self.pistons * np.pi * self.sizes['d'] * h3 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
-            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * self.OILS.loc[self.oil_temp][self.oil, 'Dyn. Viscosity'] * 1e-3)
+            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3)
             for ii in np.arange(self.pistons)])
         leak_pistons = sum(leak_piston)
         leak_total = sum((leak_block, leak_shoes, leak_pistons))
@@ -343,14 +343,14 @@ class HST:
         vol_motor = (1 - leak_total / th_flow_rate_pump) * 100
         vol_hst = vol_pump * vol_motor * 1e-2
         mech_pump = (1 - A * np.exp(
-            - Bp * self.OILS.loc[self.oil_temp][self.oil, 'Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - Bp * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - Cp * np.sqrt(
-            self.OILS.loc[self.oil_temp][self.oil, 'Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
         mech_motor = (1 - A * np.exp(
-            - Bm * self.OILS.loc[self.oil_temp][self.oil, 'Dyn. Viscosity'] * speed_pump * vol_hst * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - Bm * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump * vol_hst * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - Cm * np.sqrt(
-            self.OILS.loc[self.oil_temp][self.oil, 'Dyn. Viscosity'] * speed_pump*vol_hst * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump*vol_hst * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
             - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
         mech_hst = mech_pump * mech_motor * 1e-2
         total_pump = vol_pump * mech_pump * 1e-2
@@ -379,16 +379,16 @@ class HST:
             Y = np.r_[Y, np.reshape(pressure, (-1, 1))]
         lin_reg = LinearRegression()
         lin_reg.fit(X, Y)
+        self.no_load = (X, Y)
         self.no_load_intercept = lin_reg.intercept_
         self.no_load_coef = lin_reg.coef_
 
-    @st.cache
     def plot_oil(self):
         fig = go.Figure()
         fig.add_scatter(
             mode='lines+markers',
-            x=self.OILS.index,
-            y=self.OILS.loc[:][self.oil, 'Dyn. Viscosity'],
+            x=self.oil_data.index,
+            y=self.oil_data.loc[:]['Dyn. Viscosity'],
             yaxis='y1',
             name='Dynamic viscosity, mPa s',
             line=dict(
@@ -400,8 +400,8 @@ class HST:
         )
         fig.add_scatter(
             mode='lines+markers',
-            x=self.OILS.index,
-            y=self.OILS.loc[:][self.oil, 'Kin. Viscosity'],
+            x=self.oil_data.index,
+            y=self.oil_data.loc[:]['Kin. Viscosity'],
             yaxis='y1',
             name='Kinematic viscosity, cSt',
             line=dict(
@@ -413,8 +413,8 @@ class HST:
         )
         fig.add_scatter(
             mode='lines+markers',
-            x=self.OILS.index,
-            y=self.OILS.loc[:][self.oil, 'Density']*1e3,
+            x=self.oil_data.index,
+            y=self.oil_data.loc[:]['Density']*1e3,
             yaxis='y2',
             name='Density, kg/cub.m',
             line=dict(
@@ -435,7 +435,7 @@ class HST:
                 gridcolor='LightGray',
                 gridwidth=0.25,
                 linewidth=0.5,
-                range=[min(self.OILS.index), max(self.OILS.index)]
+                range=[min(self.oil_data.index), max(self.oil_data.index)]
             ),
             yaxis=dict(
                 title='Viscosity',
@@ -533,7 +533,7 @@ class HST:
             y=np.reshape(self.no_load_coef, (-1,))*speed +
             np.reshape(self.no_load_intercept, (-1,)),
             yaxis='y1',
-            name='No-load test limits',
+            name='No-load test limit',
             line=dict(
                 width=1,
                 dash='dash',
@@ -671,13 +671,15 @@ class HST:
             fig.show()
         return fig
 
+
 def plot_catalogues():
     st.title('Catalogue data and regressions')
     df = pd.read_csv('data.csv', index_col='#')
     models = {}
     fig = make_subplots(rows=2, cols=2, shared_xaxes=True,
                         shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.07,
-                         subplot_titles=['Pump speed data', 'Pump mass data', 'Motor speed data', 'Motor mass data']
+                        subplot_titles=[
+                            'Pump speed data', 'Pump mass data', 'Motor speed data', 'Motor mass data']
                         )
     for i, machine_type in enumerate(('pump', 'motor')):
         for j, data_type in enumerate(('speed', 'mass')):
@@ -754,6 +756,7 @@ def plot_catalogues():
     )
     st.write(fig)
     return models
+
 
 def set_sidebar():
     st.sidebar.markdown('Setting up the efficiency map')
