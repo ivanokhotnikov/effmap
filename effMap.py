@@ -8,27 +8,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import train_test_split, cross_validate
+from sklearn.model_selection import KFold, cross_validate
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.linear_model import LinearRegression
 
 
-def load_engines_dict():
-    """Loads the dictionary of available engines.
-
-    For each key - engine name, the value is a dictionary with a performance curve and pivot speeds. A performance curve is in a form lists of engine speed in rpm, torque in Nm and power in kW.
-    """
-    return {'engine_1': {'speed': [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000],
-                         'torque': [1350, 1450, 1550, 1650, 1800, 1975, 2200, 2450, 2750, 3100, 3100, 3100, 3100, 3022, 2944, 2849, 2757, 2654, 2200, 1800, 0],
-                         'power': [141.372, 167.028, 194.779, 224.624, 263.894, 310.232, 368.614, 436.158, 518.363, 616.799, 649.262, 681.726, 714.189, 727.865, 739.908, 745.866, 750.652, 750.401, 645.074, 546.637, 0],
-                         'pivot speed': 2700},
-            'engine_2': {'speed': [600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400],
-                         'torque': [1000, 1100, 1450, 1750, 2100, 2400, 2600, 2950, 3100, 3300, 3400, 3500, 3400, 3300, 3200, 3000, 2800, 2600, 0],
-                         'power': [62.8319, 80.634, 121.475, 164.934, 219.911, 276.46, 326.726, 401.6, 454.484, 518.363, 569.675, 623.083, 640.885, 656.593, 670.206, 659.734, 645.074, 626.224, 0],
-                         'pivot speed': 2200}}
-
-
-class RegressionModel(BaseEstimator):
+class Regressor(BaseEstimator):
     """Creates the rergession model object.
 
     The object performs curve fitting to the provided data using the `reg_func` target function with the ordinary least square method.
@@ -45,22 +30,23 @@ class RegressionModel(BaseEstimator):
         The string specifying a data type, deafult 'speed'.
     """
 
-    def __init__(self, data, machine_type='pump', data_type='speed'):
-        self.data = data[data['type'] ==
-                         f'{machine_type.capitalize()}']
-        self.fitted = False
-        self.model_ = self.reg_func
-        self.coefs = None
-        self.cov = None
+    def __init__(self, machine_type='pump', data_type='speed'):
         self.machine_type = machine_type
         self.data_type = data_type
-        self.r2_ = None
-        self.rmse_ = None
+        self.fitted_ = False
+
+    def get_params(self, deep=True):
+        return {"machine_type": self.machine_type, "data_type": self.data_type}
+
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
 
     def reg_func(self, x, *args):
         """Specifies the regression target function.
 
-        Based on the data_type in the `data_type` class attribute, the function chooses between linear-exponential or imple linear models.
+        Based on the data_type in the `data_type` class attribute, the function chooses between linear-exponential or simple linear models.
 
         Parameters
         ----------
@@ -79,33 +65,24 @@ class RegressionModel(BaseEstimator):
         if self.data_type == 'mass':
             return args[0] * x + args[1]
 
-    def fit(self):
+    def fit(self, x, y):
         """Fits the target regression model to the provided data with the ordinary least square method nd updated the class attributes accordingly.
 
         Fitting quality is defined by the R^2 and root-mean-square metrics.
         """
-        data = self.data[self.data['type'] ==
-                         f'{self.machine_type.capitalize()}'].sample(frac=1)
-        x = data['displacement'].to_numpy(dtype='float64')
-        y = data[self.data_type].to_numpy(dtype='float64')
-        x_train, x_test, y_train, y_test = train_test_split(
-            x, y, test_size=0.2,
-            random_state=np.random.RandomState(np.random.randint(1000)),
-            shuffle=True)
         guess_speed = [1e3, 1e-3, 1e3]
         guess_mass = [1, 1]
         if self.data_type == 'speed':
-            self.coefs, self.cov = curve_fit(
-                self.reg_func, x_train, y_train, guess_speed)
+            self.coefs_, self.cov_ = curve_fit(
+                self.reg_func, x, y, guess_speed)
         elif self.data_type == 'mass':
-            self.coefs, self.cov = curve_fit(
-                self.reg_func, x_train, y_train, guess_mass)
-        self.r2_ = r2_score(y_test, self.reg_func(x_test, *self.coefs))
-        self.rmse_ = np.sqrt(mean_squared_error(
-            y_test, self.reg_func(x_test, *self.coefs)))
-        self.fitted = True
+            self.coefs_, self.cov_ = curve_fit(
+                self.reg_func, x, y, guess_mass)
 
-    def plot(self, show_figure=False, save_figure=False, format='pdf'):
+    def predict(self, x):
+        return self.reg_func(x, *self.coefs_)
+
+    def plot(self, data, show_figure=False, save_figure=False, format='pdf'):
         """Plots and optionally saves the catalogue data alonoe or the cataloue data and the regression model if fitting was performed.
 
         Parameters
@@ -120,10 +97,10 @@ class RegressionModel(BaseEstimator):
             The flag allowing to show the plots in a browser.
         """
         fig = go.Figure()
-        for idx, i in enumerate(self.data['manufacturer'].unique()):
+        for idx, i in enumerate(data['manufacturer'].unique()):
             fig.add_scatter(
-                x=self.data['displacement'][self.data['manufacturer'] == i],
-                y=self.data[self.data_type][self.data['manufacturer'] == i],
+                x=data['displacement'][data['manufacturer'] == i],
+                y=data[self.data_type][data['manufacturer'] == i],
                 mode='markers',
                 name=i,
                 marker_symbol=idx,
@@ -148,7 +125,7 @@ class RegressionModel(BaseEstimator):
                 gridcolor='LightGray',
                 gridwidth=0.25,
                 linewidth=0.5,
-                range=[0, round(1.1 * max(self.data['displacement']), -2)]
+                range=[0, round(1.1 * max(data['displacement']), -2)]
             ),
             yaxis=dict(
                 title=f'{self.machine_type.capitalize()} {self.data_type}, rpm' if self.data_type == 'speed' else f'{self.machine_type.capitalize()} {self.data_type}, kg',
@@ -159,22 +136,22 @@ class RegressionModel(BaseEstimator):
                 gridcolor='LightGray',
                 gridwidth=0.25,
                 linewidth=0.5,
-                range=[0, round(1.1 * max(self.data[self.data_type]), -2)] if self.data_type == 'mass' else [
-                    round(.9 * min(self.data[self.data_type]), -2), round(1.1 * max(self.data[self.data_type]), -2)]
+                range=[0, round(1.1 * max(data[self.data_type]), -2)] if self.data_type == 'mass' else [
+                    round(.9 * min(data[self.data_type]), -2), round(1.1 * max(data[self.data_type]), -2)]
             ),
             plot_bgcolor='rgba(255,255,255,1)',
             paper_bgcolor='rgba(255,255,255,0)',
             showlegend=True,
         )
-        if self.fitted:
-            data = self.data[self.data['type'] ==
-                             f'{self.machine_type.capitalize()}']
+        if self.fitted_:
+            data = data[data['type'] ==
+                        f'{self.machine_type.capitalize()}']
             x = data['displacement'].values
             x_cont = np.linspace(.2 * np.amin(x), 1.2 * np.amax(x), num=100)
             for i in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, self.rmse_, -self.rmse_)):
                 fig.add_scatter(
                     x=x_cont,
-                    y=self.model_(x_cont, *self.coefs)+i[1],
+                    y=self.predict(x_cont)+i[1],
                     mode='lines',
                     name=i[0],
                     line=dict(
@@ -212,25 +189,16 @@ class HST:
         The maximum mechanical power in kW the HST is meant to transmit, i.e. to take as an input, default 682 kW.
     """
 
-    def __init__(self, disp, swash=18, pistons=9, oil='SAE 15W40', engine='engine_1', input_gear_ratio=.75, max_power_input=680, oil_temp=100):
+    def __init__(self, disp, swash=18, pistons=9, oil='SAE 15W40', oil_temp=100, engine='engine_1', input_gear_ratio=.75, max_power_input=680):
         self.displ = disp
         self.swash = swash
         self.pistons = pistons
         self.oil = oil
         self.oil_temp = oil_temp
-        self.oil_data = None
         self.oil_bulk = 15000
-        self.sizes = {}
-        self.efficiencies = {}
-        self.performance = {}
-        self.leaks = {}
         self.engine = engine
         self.input_gear_ratio = input_gear_ratio
         self.max_power_input = max_power_input
-        self.pump_speed_limit = None
-        self.no_load = None
-        self.no_load_coef = None
-        self.no_load_intercept = None
         self.import_oils()
 
     def import_oils(self):
@@ -265,123 +233,6 @@ class HST:
             index=col[0][1][:11])
         df.index.name = index_name = col[0][0]
         self.oil_data = df[self.oil]
-
-    def sizing(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
-        """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
-
-        Parameters
-        ----------
-        k1, k2, k3, k4, k5: float, optional
-            Design balances, default k1 = .75, k2 = .91, k3 = .48, k4 = .93, k5 = .91
-
-        """
-        dia_piston = (4 * self.displ * 1e-6 * k1 /
-                      (self.pistons ** 2 * np.tan(np.radians(self.swash)))) ** (1 / 3)
-        area_piston = np.pi * dia_piston ** 2 / 4
-        pcd = self.pistons * dia_piston / (np.pi * k1)
-        stroke = pcd * np.tan(np.radians(self.swash))
-        min_engagement = 1.4 * dia_piston
-        kidney_area = k3 * area_piston
-        kidney_width = 2 * (np.sqrt(dia_piston ** 2 + (np.pi - 4) *
-                                    kidney_area) - dia_piston) / (np.pi - 4)
-        land_width = k2 * self.pistons * area_piston / \
-            (np.pi * pcd) - kidney_width
-        rad_ext_int = (pcd + kidney_width) / 2
-        rad_ext_ext = rad_ext_int + land_width
-        rad_int_ext = (pcd - kidney_width) / 2
-        rad_int_int = rad_int_ext - land_width
-        area_shoe = k4 * area_piston / np.cos(np.radians(self.swash))
-        rad_ext_shoe = np.pi * pcd * k5 / (2 * self.pistons)
-        rad_int_shoe = np.sqrt(rad_ext_shoe ** 2 - area_shoe / np.pi)
-        self.sizes = {'d': dia_piston, 'D': pcd, 'h': stroke, 'eng': min_engagement,
-                      'rbo': rad_ext_int, 'Rbo': rad_ext_ext, 'Rbi': rad_int_ext, 'rbi': rad_int_int, 'rs': rad_int_shoe, 'Rs': rad_ext_shoe}
-
-    def predict_speed_limit(self, RegModel):
-        """Defines the pump speed limit."""
-        self.pump_speed_limit = [RegModel.reg_func(
-            self.displ, *RegModel.coefs)+i for i in (-RegModel.rmse_, 0, +RegModel.rmse_)]
-
-    def efficiency(self, speed_pump, pressure_discharge, pressure_charge=25.0, A=.17, Bp=1.0, Bm=.5, Cp=.001, Cm=.005, D=125, h1=15e-6, h2=15e-6, h3=25e-6, eccentricity=1):
-        """Defines efficiencies and performance characteristics of the HST made of same-displacement axial-piston machines.
-
-        Parameters
-        ----------
-        speed_pump: int
-            The HST input, or pump, speed in rpm.
-        pressure_discharge: int
-            The discharge pressures in bar.
-        pressure_charge: int, optional
-            The charge pressure in bar, default 25 bar.
-        A, Bp, Bm, Cp, Cm, D: float, optional
-            Coefficients in the efficiency model, default A = .17, Bp = 1.0, Bm = .5, Cp = .001, Cm = .005, D = 125.
-        h1, h2, h3: float, optional
-            Clearances in m, default h1 = 15e-6, h2 = 15e-6, h3 = 25e-6.
-        eccentricity: float, optional
-            Eccentricity ratio of a psiton in a bore, default 1.
-
-        Returns
-        --------
-        out: dict
-            The dictionary containing as values efficiencies of each machine as well as of HST in per cents. The dictionary structure is as following:
-            {'pump': {'volumetric': float, 'mechanical': float, 'total': float},
-            'motor': {'volumetric': float, 'mechanical': float, 'total': float},
-            'hst': {'volumetric': float, 'mechanical': float, 'total': float}}
-
-        """
-        leak_block = np.pi * h1 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
-            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3)
-        leak_shoes = (self.pistons * np.pi * h2 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) / (
-            6 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3 * np.log(self.sizes['Rs'] / self.sizes['rs'])))
-        leak_piston = np.array([self.pistons * np.pi * self.sizes['d'] * h3 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
-            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3)
-            for ii in np.arange(self.pistons)])
-        leak_pistons = sum(leak_piston)
-        leak_total = sum((leak_block, leak_shoes, leak_pistons))
-        th_flow_rate_pump = speed_pump * self.displ / 6e7
-        vol_pump = (1 - (pressure_discharge - pressure_charge) / self.oil_bulk
-                    - leak_total / th_flow_rate_pump) * 100
-        vol_motor = (1 - leak_total / th_flow_rate_pump) * 100
-        vol_hst = vol_pump * vol_motor * 1e-2
-        mech_pump = (1 - A * np.exp(
-            - Bp * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
-            - Cp * np.sqrt(
-            self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
-            - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
-        mech_motor = (1 - A * np.exp(
-            - Bm * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump * vol_hst * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
-            - Cm * np.sqrt(
-            self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump*vol_hst * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
-            - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
-        mech_hst = mech_pump * mech_motor * 1e-2
-        total_pump = vol_pump * mech_pump * 1e-2
-        total_motor = vol_motor * mech_motor * 1e-2
-        total_hst = total_pump * total_motor * 1e-2
-        torque_pump = (pressure_discharge * 1e5 - pressure_charge * 1e5) * \
-            self.displ * 1e-6 / (2 * np.pi * mech_pump * 1e-2)
-        torque_motor = (pressure_discharge * 1e5 - pressure_charge * 1e5) * self.displ * \
-            1e-6 / (2 * np.pi * mech_pump * 1e-2) * (mech_hst * 1e-2)
-        power_pump = torque_pump * speed_pump * np.pi / 30 * 1e-3
-        power_motor = power_pump * total_hst * 1e-2
-        speed_motor = speed_pump * vol_hst * 1e-2
-        self.performance = {'pump': {'speed': speed_pump, 'torque': torque_pump, 'power': power_pump},
-                            'motor': {'speed': speed_motor, 'torque': torque_motor, 'power': power_motor},
-                            'delta': {'speed': speed_pump - speed_motor, 'torque': torque_pump - torque_motor, 'power': power_pump - power_motor},
-                            'charge pressure': pressure_charge, 'discharge pressure': pressure_discharge}
-        self.efficiencies = {'pump': {'volumetric': vol_pump, 'mechanical': mech_pump, 'total': total_pump},
-                             'motor': {'volumetric': vol_motor, 'mechanical': mech_motor, 'total': total_motor},
-                             'hst': {'volumetric': vol_hst, 'mechanical': mech_hst, 'total': total_hst}}
-        return self.efficiencies
-
-    def no_load_test_data(self, *args):
-        X, Y = np.reshape([], (-1, 1)), np.reshape([], (-1, 1))
-        for speed, pressure in args:
-            X = np.r_[X, np.reshape(speed, (-1, 1))]
-            Y = np.r_[Y, np.reshape(pressure, (-1, 1))]
-        lin_reg = LinearRegression()
-        lin_reg.fit(X, Y)
-        self.no_load = (X, Y)
-        self.no_load_intercept = lin_reg.intercept_
-        self.no_load_coef = lin_reg.coef_
 
     def plot_oil(self):
         fig = go.Figure()
@@ -463,6 +314,136 @@ class HST:
             legend=dict(x=0, y=-.2)
         )
         return fig
+
+    def load_engines(self):
+        """Loads the dictionary of available engines.
+
+        For each key - engine name, the value is a dictionary with a performance curve and pivot speeds. A performance curve is in a form lists of engine speed in rpm, torque in Nm and power in kW.
+        """
+        return {'engine_1': {'speed': [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000],
+                             'torque': [1350, 1450, 1550, 1650, 1800, 1975, 2200, 2450, 2750, 3100, 3100, 3100, 3100, 3022, 2944, 2849, 2757, 2654, 2200, 1800, 0],
+                             'power': [141.372, 167.028, 194.779, 224.624, 263.894, 310.232, 368.614, 436.158, 518.363, 616.799, 649.262, 681.726, 714.189, 727.865, 739.908, 745.866, 750.652, 750.401, 645.074, 546.637, 0],
+                             'pivot speed': 2700},
+                'engine_2': {'speed': [600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400],
+                             'torque': [1000, 1100, 1450, 1750, 2100, 2400, 2600, 2950, 3100, 3300, 3400, 3500, 3400, 3300, 3200, 3000, 2800, 2600, 0],
+                             'power': [62.8319, 80.634, 121.475, 164.934, 219.911, 276.46, 326.726, 401.6, 454.484, 518.363, 569.675, 623.083, 640.885, 656.593, 670.206, 659.734, 645.074, 626.224, 0],
+                             'pivot speed': 2200}}
+
+    def sizing(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
+        """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
+
+        Parameters
+        ----------
+        k1, k2, k3, k4, k5: float, optional
+            Design balances, default k1 = .75, k2 = .91, k3 = .48, k4 = .93, k5 = .91
+
+        """
+        dia_piston = (4 * self.displ * 1e-6 * k1 /
+                      (self.pistons ** 2 * np.tan(np.radians(self.swash)))) ** (1 / 3)
+        area_piston = np.pi * dia_piston ** 2 / 4
+        pcd = self.pistons * dia_piston / (np.pi * k1)
+        stroke = pcd * np.tan(np.radians(self.swash))
+        min_engagement = 1.4 * dia_piston
+        kidney_area = k3 * area_piston
+        kidney_width = 2 * (np.sqrt(dia_piston ** 2 + (np.pi - 4) *
+                                    kidney_area) - dia_piston) / (np.pi - 4)
+        land_width = k2 * self.pistons * area_piston / \
+            (np.pi * pcd) - kidney_width
+        rad_ext_int = (pcd + kidney_width) / 2
+        rad_ext_ext = rad_ext_int + land_width
+        rad_int_ext = (pcd - kidney_width) / 2
+        rad_int_int = rad_int_ext - land_width
+        area_shoe = k4 * area_piston / np.cos(np.radians(self.swash))
+        rad_ext_shoe = np.pi * pcd * k5 / (2 * self.pistons)
+        rad_int_shoe = np.sqrt(rad_ext_shoe ** 2 - area_shoe / np.pi)
+        self.sizes = {'d': dia_piston, 'D': pcd, 'h': stroke, 'eng': min_engagement,
+                      'rbo': rad_ext_int, 'Rbo': rad_ext_ext, 'Rbi': rad_int_ext, 'rbi': rad_int_int, 'rs': rad_int_shoe, 'Rs': rad_ext_shoe}
+
+    def predict_speed_limit(self, RegModel):
+        """Defines the pump speed limit."""
+        self.pump_speed_limit = [RegModel.predict(
+            self.displ)+i for i in (-RegModel.rmse_, 0, +RegModel.rmse_)]
+
+    def efficiency(self, speed_pump, pressure_discharge, pressure_charge=25.0, A=.17, Bp=1.0, Bm=.5, Cp=.001, Cm=.005, D=125, h1=15e-6, h2=15e-6, h3=25e-6, eccentricity=1):
+        """Defines efficiencies and performance characteristics of the HST made of same-displacement axial-piston machines.
+
+        Parameters
+        ----------
+        speed_pump: int
+            The HST input, or pump, speed in rpm.
+        pressure_discharge: int
+            The discharge pressures in bar.
+        pressure_charge: int, optional
+            The charge pressure in bar, default 25 bar.
+        A, Bp, Bm, Cp, Cm, D: float, optional
+            Coefficients in the efficiency model, default A = .17, Bp = 1.0, Bm = .5, Cp = .001, Cm = .005, D = 125.
+        h1, h2, h3: float, optional
+            Clearances in m, default h1 = 15e-6, h2 = 15e-6, h3 = 25e-6.
+        eccentricity: float, optional
+            Eccentricity ratio of a psiton in a bore, default 1.
+
+        Returns
+        --------
+        out: dict
+            The dictionary containing as values efficiencies of each machine as well as of HST in per cents. The dictionary structure is as following:
+            {'pump': {'volumetric': float, 'mechanical': float, 'total': float},
+            'motor': {'volumetric': float, 'mechanical': float, 'total': float},
+            'hst': {'volumetric': float, 'mechanical': float, 'total': float}}
+        """
+        leak_block = np.pi * h1 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
+            1 / np.log(self.sizes['Rbo'] / self.sizes['rbo']) + 1 / np.log(self.sizes['Rbi'] / self.sizes['rbi'])) / (6 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3)
+        leak_shoes = (self.pistons * np.pi * h2 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) / (
+            6 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3 * np.log(self.sizes['Rs'] / self.sizes['rs'])))
+        leak_piston = np.array([self.pistons * np.pi * self.sizes['d'] * h3 ** 3 * 0.5 * (pressure_discharge * 1e5 + pressure_charge * 1e5) * (
+            1 + 1.5 * eccentricity ** 3) * (1 / (self.sizes['eng'] + self.sizes['h'] * np.sin(np.pi * (ii) / self.pistons))) / (12 * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * 1e-3)
+            for ii in np.arange(self.pistons)])
+        leak_pistons = sum(leak_piston)
+        leak_total = sum((leak_block, leak_shoes, leak_pistons))
+        th_flow_rate_pump = speed_pump * self.displ / 6e7
+        vol_pump = (1 - (pressure_discharge - pressure_charge) / self.oil_bulk
+                    - leak_total / th_flow_rate_pump) * 100
+        vol_motor = (1 - leak_total / th_flow_rate_pump) * 100
+        vol_hst = vol_pump * vol_motor * 1e-2
+        mech_pump = (1 - A * np.exp(
+            - Bp * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - Cp * np.sqrt(
+            self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
+        mech_motor = (1 - A * np.exp(
+            - Bm * self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump * vol_hst * 1e-2 / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - Cm * np.sqrt(
+            self.oil_data.loc[self.oil_temp]['Dyn. Viscosity'] * speed_pump*vol_hst * 1e-2 / (self.swash*(pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5))
+            - D / (self.swash * (pressure_discharge * 1e5 - pressure_charge * 1e5) * 1e-5)) * 100
+        mech_hst = mech_pump * mech_motor * 1e-2
+        total_pump = vol_pump * mech_pump * 1e-2
+        total_motor = vol_motor * mech_motor * 1e-2
+        total_hst = total_pump * total_motor * 1e-2
+        torque_pump = (pressure_discharge * 1e5 - pressure_charge * 1e5) * \
+            self.displ * 1e-6 / (2 * np.pi * mech_pump * 1e-2)
+        torque_motor = (pressure_discharge * 1e5 - pressure_charge * 1e5) * self.displ * \
+            1e-6 / (2 * np.pi * mech_pump * 1e-2) * (mech_hst * 1e-2)
+        power_pump = torque_pump * speed_pump * np.pi / 30 * 1e-3
+        power_motor = power_pump * total_hst * 1e-2
+        speed_motor = speed_pump * vol_hst * 1e-2
+        self.performance = {'pump': {'speed': speed_pump, 'torque': torque_pump, 'power': power_pump},
+                            'motor': {'speed': speed_motor, 'torque': torque_motor, 'power': power_motor},
+                            'delta': {'speed': speed_pump - speed_motor, 'torque': torque_pump - torque_motor, 'power': power_pump - power_motor},
+                            'charge pressure': pressure_charge, 'discharge pressure': pressure_discharge}
+        self.efficiencies = {'pump': {'volumetric': vol_pump, 'mechanical': mech_pump, 'total': total_pump},
+                             'motor': {'volumetric': vol_motor, 'mechanical': mech_motor, 'total': total_motor},
+                             'hst': {'volumetric': vol_hst, 'mechanical': mech_hst, 'total': total_hst}}
+        return self.efficiencies
+
+    def no_load_test_data(self, *args):
+        X, Y = np.reshape([], (-1, 1)), np.reshape([], (-1, 1))
+        for speed, pressure in args:
+            X = np.r_[X, np.reshape(speed, (-1, 1))]
+            Y = np.r_[Y, np.reshape(pressure, (-1, 1))]
+        lin_reg = LinearRegression()
+        lin_reg.fit(X, Y)
+        self.no_load = (X, Y)
+        self.no_load_intercept = lin_reg.intercept_
+        self.no_load_coef = lin_reg.coef_
 
     def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=100, show_figure=True, save_figure=False, format='pdf'):
         """Plots and optionally saves the HST efficiency maps.
@@ -572,7 +553,7 @@ class HST:
             legend=dict(x=0, y=-.1)
         )
         if self.engine:
-            ENGINES = load_engines_dict()
+            ENGINES = self.load_engines()
             pressure_pivot = self.max_power_input * 1e3 * 30 / np.pi / \
                 ENGINES[self.engine]['pivot speed'] / self.input_gear_ratio * 2 * np.pi / \
                 self.displ / 1e-6 / 1e5 * \
@@ -679,24 +660,37 @@ def plot_catalogues():
     fig = make_subplots(rows=2, cols=2, shared_xaxes=True,
                         shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.07,
                         subplot_titles=[
-                            'Pump speed data', 'Pump mass data', 'Motor speed data', 'Motor mass data']
-                        )
+                            'Pump speed data', 'Pump mass data', 'Motor speed data', 'Motor mass data'])
     for i, machine_type in enumerate(('pump', 'motor')):
         for j, data_type in enumerate(('speed', 'mass')):
             data = df[df['type'] ==
                       f'{machine_type.capitalize()}']
-            model = RegressionModel(
-                data,
+            model = Regressor(
                 machine_type=machine_type,
                 data_type=data_type)
-            model.fit()
-            rmse = np.round(model.rmse_, decimals=2)
-            x = data['displacement'].values
+            x = data['displacement'].to_numpy(dtype='float64')
+            y = data[data_type].to_numpy(dtype='float64')
+            strat_k_fold = KFold(
+                n_splits=5, shuffle=True,
+                random_state=42)
+            cv_results = cross_validate(
+                model, x, y,
+                cv=strat_k_fold, scoring=['neg_root_mean_squared_error', 'r2'], return_estimator=True, n_jobs=-1, verbose=0)
+            model.r2_ = np.mean([k for k in cv_results['test_r2']])
+            model.rmse_ = - np.mean(
+                [k for k in cv_results['test_neg_root_mean_squared_error']])
+            model.r2std_ = np.std([k for k in cv_results['test_r2']])
+            model.rmsestd_ = np.std(
+                [k for k in cv_results['test_neg_root_mean_squared_error']])
+            model.coefs_ = np.mean(
+                [k.coefs_ for k in cv_results['estimator']], axis=0)
+            model.fitted_ = True
+            models['_'.join((machine_type, data_type))] = model
             x_cont = np.linspace(.2 * np.amin(x), 1.2 * np.amax(x), num=100)
             for l in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, model.rmse_, -model.rmse_)):
                 fig.add_scatter(
                     x=x_cont,
-                    y=model.model_(x_cont, *model.coefs)+l[1],
+                    y=model.predict(x_cont)+l[1],
                     mode='lines',
                     name=l[0],
                     line=dict(
@@ -746,7 +740,6 @@ def plot_catalogues():
                 row=j + 1,
                 col=i + 1
             )
-            models['_'.join((machine_type, data_type))] = model
     fig.update_layout(
         width=800,
         height=800,
@@ -755,44 +748,42 @@ def plot_catalogues():
         showlegend=False,
     )
     st.write(fig)
+    for i in models:
+        units = 'rpm' if 'speed' in i else 'kg'
+        st.write(f'RMSE {models[i].machine_type} {models[i].data_type} = {np.round(models[i].rmse_, decimals=2)}',
+                 u'\u00B1', f'{np.round(models[i].rmsestd_,decimals=2)}', units)
     return models
 
 
 def set_sidebar():
     st.sidebar.markdown('Setting up the efficiency map')
-    oil = st.sidebar.selectbox(
-        'Select an oil:',
-        ('SAE 15W40', 'SAE 10W40', 'SAE 10W60', 'SAE 5W40', 'SAE 0W30', 'SAE 30'))
-    oil_temp = st.sidebar.slider(
-        'Select oil temperature',
-        min_value=0,
-        max_value=100,
-        value=100,
-        step=10)
-    max_displ = st.sidebar.slider(
-        'Select a displcement',
-        min_value=100,
-        max_value=800,
-        value=440,
-        step=5)
-    max_power = st.sidebar.slider(
-        'Select a max power',
-        min_value=400,
-        max_value=800,
-        value=685,
-        step=5)
-    gear_ratio = st.sidebar.slider(
-        'Select an input gear ratio',
-        min_value=.5,
-        max_value=2.,
-        value=.75,
-        step=.25)
-    max_speed = st.sidebar.slider(
-        'Select a max speed',
-        min_value=1000,
-        max_value=4000,
-        value=2400,
-        step=100)
+    oil = st.sidebar.selectbox('Select an oil:',
+                               ('SAE 15W40', 'SAE 10W40', 'SAE 10W60', 'SAE 5W40', 'SAE 0W30', 'SAE 30'))
+    oil_temp = st.sidebar.slider('Select oil temperature',
+                                 min_value=0,
+                                 max_value=100,
+                                 value=100,
+                                 step=10)
+    max_displ = st.sidebar.slider('Select a displacement',
+                                  min_value=100,
+                                  max_value=800,
+                                  value=440,
+                                  step=5)
+    max_power = st.sidebar.slider('Select a max power',
+                                  min_value=400,
+                                  max_value=800,
+                                  value=685,
+                                  step=5)
+    gear_ratio = st.sidebar.slider('Select an input gear ratio',
+                                   min_value=.5,
+                                   max_value=2.,
+                                   value=.75,
+                                   step=.25)
+    max_speed = st.sidebar.slider('Select a max speed',
+                                  min_value=1000,
+                                  max_value=4000,
+                                  value=2400,
+                                  step=100)
     max_pressure = st.sidebar.slider('Select the max pressure',
                                      min_value=100,
                                      max_value=800,
