@@ -1,1 +1,6 @@
 /.git
+Models/model_motor_mass.joblib
+Models/model_motor_speed.joblib
+Models/model_pump_mass.joblib
+Models/model_pump_speed.joblib
+Images/eff_map_440.pdf
