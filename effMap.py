@@ -392,9 +392,9 @@ class HST:
         ----------
         speed_pump: int
             The HST input, or pump, speed in rpm.
-        pressure_discharge: int
+        pressure_discharge: float
             The discharge pressures in bar.
-        pressure_charge: int, optional
+        pressure_charge: float, optional
             The charge pressure in bar, default 25 bar.
         A, Bp, Bm, Cp, Cm, D: float, optional
             Coefficients in the efficiency model, default A = .17, Bp = 1.0, Bm = .5, Cp = .001, Cm = .005, D = 125.
@@ -456,6 +456,15 @@ class HST:
         return self.efficiencies
 
     def compute_loads(self, pressure_discharge, pressure_charge=25.0):
+        """Calculates steady state, pressure-induced structural loads in the HST.
+
+        Parameters
+        ----------
+        pressure_discharge: float
+            The discharge pressure in bar
+        pressure_charge: float, optional
+            The charge pressure in bar, default 25.0 bar.
+        """
         self.shaft_radial = ((self.pistons // 2 + 1) *
                              pressure_discharge + self.pistons // 2 * pressure_charge) * 1e5 * \
             self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
