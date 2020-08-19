@@ -350,7 +350,7 @@ class HST:
                              'power': [62.8319, 80.634, 121.475, 164.934, 219.911, 276.46, 326.726, 401.6, 454.484, 518.363, 569.675, 623.083, 640.885, 656.593, 670.206, 659.734, 645.074, 626.224, 0],
                              'pivot speed': 2200}}
 
-    def sizing(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
+    def compute_sizes(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
         """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
 
         Parameters
@@ -377,15 +377,15 @@ class HST:
         area_shoe = k4 * area_piston / np.cos(np.radians(self.swash))
         rad_ext_shoe = np.pi * pcd * k5 / (2 * self.pistons)
         rad_int_shoe = np.sqrt(rad_ext_shoe ** 2 - area_shoe / np.pi)
-        self.sizes = {'d': dia_piston, 'D': pcd, 'h': stroke, 'eng': min_engagement,
+        self.sizes = {'d': dia_piston, 'Ap': area_piston, 'D': pcd, 'h': stroke, 'eng': min_engagement,
                       'rbo': rad_ext_int, 'Rbo': rad_ext_ext, 'Rbi': rad_int_ext, 'rbi': rad_int_int, 'rs': rad_int_shoe, 'Rs': rad_ext_shoe}
 
-    def predict_speed_limit(self, RegModel):
+    def compute_speed_limit(self, RegModel):
         """Defines the pump speed limit."""
         self.pump_speed_limit = [RegModel.predict(
             self.displ)+i for i in (-RegModel.rmse_, 0, +RegModel.rmse_)]
 
-    def efficiency(self, speed_pump, pressure_discharge, pressure_charge=25.0, A=.17, Bp=1.0, Bm=.5, Cp=.001, Cm=.005, D=125, h1=15e-6, h2=15e-6, h3=25e-6, eccentricity=1):
+    def compute_eff(self, speed_pump, pressure_discharge, pressure_charge=25.0, A=.17, Bp=1.0, Bm=.5, Cp=.001, Cm=.005, D=125, h1=15e-6, h2=15e-6, h3=25e-6, eccentricity=1):
         """Defines efficiencies and performance characteristics of the HST made of same-displacement axial-piston machines.
 
         Parameters
@@ -455,7 +455,16 @@ class HST:
                              'hst': {'volumetric': vol_hst, 'mechanical': mech_hst, 'total': total_hst}}
         return self.efficiencies
 
-    def no_load_test_data(self, *args):
+    def compute_loads(self, pressure_discharge, pressure_charge=25.0):
+        self.shaft_radial = ((self.pistons // 2 + 1) *
+                             pressure_discharge + self.pistons // 2 * pressure_charge) * 1e5 * \
+            self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
+        self.swash_long = (self.pistons // 2 + 1) * pressure_discharge * \
+            1e5 * self.sizes['Ap'] / 1e3
+        self.swash_lat = self.pistons // 2 * pressure_charge * \
+            1e5 * self.sizes['Ap'] / 1e3
+
+    def add_no_load(self, *args):
         """Adds class attributes of the no-load test data: tuple self.no_load containing speeds and pressures of possible onset of block tilting, self.no_load_intercept and self.no_load_coef are coefficients of a linear regression model built for the no_load data."""
         X, Y = np.reshape([], (-1, 1)), np.reshape([], (-1, 1))
         for speed, pressure in args:
@@ -463,7 +472,7 @@ class HST:
             Y = np.r_[Y, np.reshape(pressure, (-1, 1))]
         lin_reg = LinearRegression()
         lin_reg.fit(X, Y)
-        self.no_load = (X, Y)
+        self.no_load_points = (X, Y)
         self.no_load_intercept = lin_reg.intercept_
         self.no_load_coef = lin_reg.coef_
 
@@ -497,12 +506,12 @@ class HST:
         pressure = np.linspace(min_pressure_discharge,
                                max_pressure_discharge, res)
         eff_hst = np.array(
-            [[self.efficiency(i, j, pressure_charge=pressure_charge)['hst']['total']
+            [[self.compute_eff(i, j, pressure_charge=pressure_charge)['hst']['total']
               for i in speed]
              for j in pressure]
         )
         mech_eff_pump = np.array(
-            [[self.efficiency(i, j, pressure_charge=pressure_charge)['pump']['mechanical']
+            [[self.compute_eff(i, j, pressure_charge=pressure_charge)['pump']['mechanical']
               for i in speed]
              for j in pressure]
         )
@@ -580,7 +589,7 @@ class HST:
                 ENGINES[self.engine]['pivot speed'] / self.input_gear_ratio * 2 * np.pi / \
                 self.displ / 1e-6 / 1e5 * \
                 np.amax(mech_eff_pump) * 1e-2 + pressure_charge
-            _ = self.efficiency(
+            _ = self.compute_eff(
                 ENGINES[self.engine]['pivot speed'] * self.input_gear_ratio, pressure_pivot)
             performance_pivot = self.performance
             fig.add_scatter(
@@ -819,9 +828,10 @@ def test_run():
     oil, oil_temp, max_displ, max_power, gear_ratio, max_speed, max_pressure, pressure_lim = set_sidebar()
     hst = HST(max_displ, oil=oil, oil_temp=oil_temp, max_power_input=max_power,
               input_gear_ratio=gear_ratio)
-    hst.sizing()
-    hst.predict_speed_limit(models['pump_speed'])
-    hst.no_load_test_data((1800, 140), (2025, 180))
+    hst.compute_sizes()
+    hst.compute_speed_limit(models['pump_speed'])
+    hst.add_no_load((1800, 140), (2025, 180))
+    hst.compute_loads(pressure_lim)
     st.title(f'Physical properties of oil')
     st.write(hst.plot_oil())
     st.title('Efficiency map')
