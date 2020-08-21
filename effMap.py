@@ -465,13 +465,12 @@ class HST:
         pressure_charge: float, optional
             The charge pressure in bar, default 25.0 bar.
         """
-        self.shaft_radial = ((self.pistons // 2 + 1) *
-                             pressure_discharge + self.pistons // 2 * pressure_charge) * 1e5 * \
-            self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
-        self.swash_long = (self.pistons // 2 + 1) * pressure_discharge * \
-            1e5 * self.sizes['Ap'] / 1e3
-        self.swash_lat = self.pistons // 2 * pressure_charge * \
-            1e5 * self.sizes['Ap'] / 1e3
+        self.shaft_radial = ((self.pistons // 2 + 1) * pressure_discharge + self.pistons //
+                             2 * pressure_charge) * 1e5 * self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
+        self.swash_long = (self.pistons // 2 + 1) * \
+            pressure_discharge * 1e5 * self.sizes['Ap'] / 1e3
+        self.swash_lat = self.pistons // 2 * \
+            pressure_charge * 1e5 * self.sizes['Ap'] / 1e3
 
     def add_no_load(self, *args):
         """Adds class attributes of the no-load test data: tuple self.no_load containing speeds and pressures of possible onset of block tilting, self.no_load_intercept and self.no_load_coef are coefficients of a linear regression model built for the no_load data."""
