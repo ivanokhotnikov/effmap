@@ -692,6 +692,42 @@ class HST:
         return fig
 
 
+def validate():
+    data = pd.read_csv('.\\Data\\test_data.csv')
+    data.dropna(subset=['Forward Speed', 'Reverse Speed',
+                        'Volumetric at 1780RPM'], inplace=True)
+    speeds = data[['Forward Speed', 'Reverse Speed']].astype(float)
+    speeds = speeds.stack()
+    vol_eff = speeds / 1780 * 1e2
+    piston_max = 1.1653 * 25.4 * 1e-3
+    piston_min = 1.1650 * 25.4 * 1e-3
+    bore_max = 1.1677 * 25.4 * 1e-3
+    bore_min = 1.1671 * 25.4 * 1e-3
+    rad_clearance_max = (bore_max - piston_min) / 2
+    rad_clearance_min = (bore_min - piston_max) / 2
+    benchmark = HST(disp=196, swash=15, oil='SAE 30', oil_temp=60)
+    benchmark.compute_sizes(k1=.7155, k2=.9017, k3=.47, k4=.9348, k5=.9068)
+    eff_min = benchmark.compute_eff(
+        speed_pump=1780, pressure_discharge=207, pressure_charge=14, h3=rad_clearance_max)
+    eff_max = benchmark.compute_eff(
+        speed_pump=1780, pressure_discharge=207, pressure_charge=14, h3=rad_clearance_min)
+    # TODO streamlit the figure printing
+    vol_eff.plot(kind='hist', bins=25, grid=True, label='Test data')
+    plt.plot([eff_max['hst']['volumetric'], eff_max['hst']['volumetric']], [
+             0, 100], label='Prediction. Min clearance')
+    plt.plot([eff_min['hst']['volumetric'], eff_min['hst']['volumetric']], [
+             0, 100], label='Prediction. Max clearance')
+    plt.plot([vol_eff.mean(), vol_eff.mean()], [
+             0, 100], '--', label='Test $\mu$')
+    plt.plot([vol_eff.mean()+vol_eff.std(), vol_eff.mean() +
+              vol_eff.std()], [0, 100], '--', label='Test $\mu + \sigma$')
+    plt.plot([vol_eff.mean()-vol_eff.std(), vol_eff.mean() -
+              vol_eff.std()], [0, 100], '--', label='Test $\mu - \sigma$')
+    plt.xlabel('HST volumetric efficiency, %')
+    plt.ylim(0, 100)
+    plt.legend()
+
+
 def fit_catalogues(data_in):
     models = {}
     if not os.path.exists('Models'):
@@ -830,7 +866,7 @@ def set_sidebar():
 
 
 def test_run():
-    data = pd.read_csv('data.csv', index_col='#')
+    data = pd.read_csv('.\Data\data.csv', index_col='#')
     models = fit_catalogues(data)
     plot_catalogues(models, data)
     oil, oil_temp, max_displ, max_power, gear_ratio, max_speed, max_pressure, pressure_lim = set_sidebar()
@@ -840,6 +876,7 @@ def test_run():
     hst.compute_speed_limit(models['pump_speed'])
     hst.add_no_load((1800, 140), (2025, 180))
     hst.compute_loads(pressure_lim)
+    validate()
     st.title(f'Physical properties of oil')
     st.write(hst.plot_oil())
     st.title('Efficiency map')
