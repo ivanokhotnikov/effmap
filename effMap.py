@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 import lxml.html as lh
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 from joblib import dump, load
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit
@@ -711,7 +712,6 @@ def validate():
         speed_pump=1780, pressure_discharge=207, pressure_charge=14, h3=rad_clearance_max)
     eff_max = benchmark.compute_eff(
         speed_pump=1780, pressure_discharge=207, pressure_charge=14, h3=rad_clearance_min)
-    # TODO streamlit the figure printing
     vol_eff.plot(kind='hist', bins=25, grid=True, label='Test data')
     plt.plot([eff_max['hst']['volumetric'], eff_max['hst']['volumetric']], [
              0, 100], label='Prediction. Min clearance')
@@ -726,6 +726,7 @@ def validate():
     plt.xlabel('HST volumetric efficiency, %')
     plt.ylim(0, 100)
     plt.legend()
+    st.pyplot(plt)
 
 
 def fit_catalogues(data_in):

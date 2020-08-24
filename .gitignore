@@ -4,6 +4,10 @@ Models/model_motor_speed.joblib
 Models/model_pump_mass.joblib
 Models/model_pump_speed.joblib
 Images/eff_map_440.pdf
+<<<<<<< HEAD
 tryouts_regmodels.pdf
 tryouts_regmodels.ipynb
 reg_models.ipynb
+=======
+__pycache__/effMap.cpython-38.pyc
+>>>>>>> 8c046eb62dbd79d165071dcab6bf6b633243d501
