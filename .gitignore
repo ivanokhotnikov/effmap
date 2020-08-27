@@ -11,3 +11,8 @@ reg_models.ipynb
 =======
 __pycache__/effMap.cpython-38.pyc
 >>>>>>> 8c046eb62dbd79d165071dcab6bf6b633243d501
+Models/motor_mass.joblib
+Models/motor_speed.joblib
+Models/pump_mass.joblib
+Models/pump_speed.joblib
+hst.joblib

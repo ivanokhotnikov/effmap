@@ -1,16 +1,18 @@
 import os
+import joblib
 import requests
 import numpy as np
 import pandas as pd
 import streamlit as st
 import lxml.html as lh
 import plotly.graph_objects as go
+import plotly.figure_factory as ff
 import matplotlib.pyplot as plt
 from joblib import dump, load
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import KFold, cross_validate
+from sklearn.model_selection import KFold, train_test_split, cross_validate
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.linear_model import LinearRegression
 
@@ -70,7 +72,15 @@ class Regressor(BaseEstimator):
             return args[0] * x + args[1]
 
     def fit(self, x, y):
-        """Fits the target regression model to the provided data with the ordinary least square method and updates the class attributes accordingly"""
+        """Fits the target regression model to the provided data with the ordinary least square method and updates the class attributes accordingly
+
+        Parameters
+        ----------
+        x: ndarrray
+            The feature values
+        y: ndarray
+            Ground truth target values
+        """
         guess_speed = [1e3, 1e-3, 1e3]
         guess_mass = [1, 1]
         if self.data_type == 'speed':
@@ -89,6 +99,18 @@ class Regressor(BaseEstimator):
             The function variable.
         """
         return self.reg_func(x, *self.coefs_)
+
+    def eval(self, x, y):
+        """Calculates the metrics ofthe estimator (root-mean-square-error and r2_score).
+
+        Parameters
+        ----------
+        x: ndarrray
+            The test feature values
+        y: ndarray
+            Ground truth target values
+        """
+        return mean_squared_error(y, self.predict(x), squared=False), r2_score(y, self.predict(x))
 
     def plot(self, data, show_figure=False, save_figure=False, format='pdf'):
         """Plots and optionally saves the catalogue data alonoe or the cataloue data and the regression model if fitting was performed.
@@ -303,7 +325,7 @@ class HST:
                 title='Oil temperature, degrees',
                 showline=True,
                 linecolor='black',
-                mirror=True,
+                # mirror=True,
                 showgrid=True,
                 gridcolor='LightGray',
                 gridwidth=0.25,
@@ -384,7 +406,7 @@ class HST:
     def compute_speed_limit(self, RegModel):
         """Defines the pump speed limit."""
         self.pump_speed_limit = [RegModel.predict(
-            self.displ)+i for i in (-RegModel.rmse_, 0, +RegModel.rmse_)]
+            self.displ)+i for i in (-RegModel.test_rmse_, 0, +RegModel.test_rmse_)]
 
     def compute_eff(self, speed_pump, pressure_discharge, pressure_charge=25.0, A=.17, Bp=1.0, Bm=.5, Cp=.001, Cm=.005, D=125, h1=15e-6, h2=15e-6, h3=25e-6, eccentricity=1):
         """Defines efficiencies and performance characteristics of the HST made of same-displacement axial-piston machines.
@@ -468,10 +490,12 @@ class HST:
         """
         self.shaft_radial = ((self.pistons // 2 + 1) * pressure_discharge + self.pistons //
                              2 * pressure_charge) * 1e5 * self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
-        self.swash_long = (self.pistons // 2 + 1) * \
+        self.swash_high_x = (self.pistons // 2 + 1) * \
             pressure_discharge * 1e5 * self.sizes['Ap'] / 1e3
-        self.swash_lat = self.pistons // 2 * \
+        self.swash_low_x = self.pistons // 2 * \
             pressure_charge * 1e5 * self.sizes['Ap'] / 1e3
+        self.swash_high_z = self.swash_high_x * np.tan(np.radians(self.swash))
+        self.swash_low_z = self.swash_low_x * np.tan(np.radians(self.swash))
 
     def add_no_load(self, *args):
         """Adds class attributes of the no-load test data: tuple self.no_load containing speeds and pressures of possible onset of block tilting, self.no_load_intercept and self.no_load_coef are coefficients of a linear regression model built for the no_load data."""
@@ -693,7 +717,7 @@ class HST:
         return fig
 
 
-def validate():
+def run_validation():
     data = pd.read_csv('.\\Data\\test_data.csv')
     data.dropna(subset=['Forward Speed', 'Reverse Speed',
                         'Volumetric at 1780RPM'], inplace=True)
@@ -712,21 +736,86 @@ def validate():
         speed_pump=1780, pressure_discharge=207, pressure_charge=14, h3=rad_clearance_max)
     eff_max = benchmark.compute_eff(
         speed_pump=1780, pressure_discharge=207, pressure_charge=14, h3=rad_clearance_min)
-    vol_eff.plot(kind='hist', bins=25, grid=True, label='Test data')
-    plt.plot([eff_max['hst']['volumetric'], eff_max['hst']['volumetric']], [
-             0, 100], label='Prediction. Min clearance')
-    plt.plot([eff_min['hst']['volumetric'], eff_min['hst']['volumetric']], [
-             0, 100], label='Prediction. Max clearance')
-    plt.plot([vol_eff.mean(), vol_eff.mean()], [
-             0, 100], '--', label='Test $\mu$')
-    plt.plot([vol_eff.mean()+vol_eff.std(), vol_eff.mean() +
-              vol_eff.std()], [0, 100], '--', label='Test $\mu + \sigma$')
-    plt.plot([vol_eff.mean()-vol_eff.std(), vol_eff.mean() -
-              vol_eff.std()], [0, 100], '--', label='Test $\mu - \sigma$')
-    plt.xlabel('HST volumetric efficiency, %')
-    plt.ylim(0, 100)
-    plt.legend()
-    st.pyplot(plt)
+    fig = ff.create_distplot([vol_eff], ['Test data'],
+                             show_hist=True, bin_size=.3, show_rug=False)
+    fig.add_scatter(
+        x=[eff_max['hst']['volumetric'], eff_max['hst']['volumetric']],
+        y=[0, .6],
+        mode='lines',
+        name='Prediciton. Min clearance',
+        line=dict(
+            width=1.5,
+        ),
+    )
+    fig.add_scatter(
+        x=[eff_min['hst']['volumetric'], eff_min['hst']['volumetric']],
+        y=[0, .6],
+        mode='lines',
+        name='Prediciton. Max clearance',
+        line=dict(
+            width=1.5,
+        ),
+    )
+    fig.add_scatter(
+        x=[vol_eff.mean(), vol_eff.mean()],
+        y=[0, .6],
+        mode='lines',
+        name='Test mean',
+        line=dict(
+            width=1.5,
+            dash='dash'),
+    )
+    fig.add_scatter(
+        x=[vol_eff.mean()+vol_eff.std(), vol_eff.mean()+vol_eff.std()],
+        y=[0, .6],
+        mode='lines',
+        name='Test mean + STD',
+        line=dict(
+            width=1.5,
+            dash='dash'),
+    )
+    fig.add_scatter(
+        x=[vol_eff.mean()-vol_eff.std(), vol_eff.mean()-vol_eff.std()],
+        y=[0, .6],
+        mode='lines',
+        name='Test mean - STD',
+        line=dict(
+            width=1.5,
+            dash='dash'),
+    )
+    fig.update_layout(
+        title=f'Sample of {len(vol_eff)} measurements of the {benchmark.displ} cc/rev HST with {benchmark.oil} at {benchmark.oil_temp}C',
+        width=800,
+        height=500,
+        xaxis=dict(
+            title='HST volumetric efficiency, %',
+            showline=True,
+            linecolor='black',
+            # mirror=True,
+            showgrid=True,
+            gridcolor='LightGray',
+            gridwidth=0.25,
+            linewidth=0.5,
+            range=[84, 94],
+            dtick=2,
+        ),
+        yaxis=dict(
+            title='Probability density',
+            showline=True,
+            linecolor='black',
+            # mirror=True,
+            showgrid=True,
+            gridcolor='LightGray',
+            gridwidth=0.25,
+            linewidth=0.5,
+            range=[0, .6],
+        ),
+        plot_bgcolor='rgba(255,255,255,1)',
+        paper_bgcolor='rgba(255,255,255,0)',
+        showlegend=True,
+        legend_orientation='h',
+        legend=dict(x=0, y=-.15))
+    return fig
 
 
 def fit_catalogues(data_in):
@@ -740,25 +829,28 @@ def fit_catalogues(data_in):
             model = Regressor(
                 machine_type=machine_type,
                 data_type=data_type)
-            x = data['displacement'].to_numpy(dtype='float64')
-            y = data[data_type].to_numpy(dtype='float64')
+            x_full = data['displacement'].to_numpy(dtype='float64')
+            y_full = data[data_type].to_numpy(dtype='float64')
+            x_train, x_test, y_train, y_test = train_test_split(
+                x_full, y_full, test_size=0.2, random_state=0)
             strat_k_fold = KFold(
                 n_splits=5, shuffle=True,
                 random_state=42)
             cv_results = cross_validate(
-                model, x, y,
+                model, x_train, y_train,
                 cv=strat_k_fold, scoring=['neg_root_mean_squared_error', 'r2'], return_estimator=True, n_jobs=-1, verbose=0)
             model.r2_ = np.mean([k for k in cv_results['test_r2']])
-            model.rmse_ = - np.mean(
+            model.cv_rmse_ = - np.mean(
                 [k for k in cv_results['test_neg_root_mean_squared_error']])
-            model.r2std_ = np.std([k for k in cv_results['test_r2']])
-            model.rmsestd_ = np.std(
+            model.cv_r2std_ = np.std([k for k in cv_results['test_r2']])
+            model.cv_rmsestd_ = np.std(
                 [k for k in cv_results['test_neg_root_mean_squared_error']])
             model.coefs_ = np.mean(
                 [k.coefs_ for k in cv_results['estimator']], axis=0)
+            model.test_rmse_, model.test_r2_ = model.eval(x_test, y_test)
             model.fitted_ = True
             dump(model, os.path.join(
-                'Models', f'model_{machine_type}_{data_type}.joblib'))
+                'Models', f'{machine_type}_{data_type}.joblib'))
             models['_'.join((machine_type, data_type))] = model
     return models
 
@@ -777,7 +869,7 @@ def plot_catalogues(models, data_in):
         x = data['displacement'].to_numpy(dtype='float64')
         x_cont = np.linspace(.2 * np.amin(x),
                              1.2 * np.amax(x), num=100)
-        for l in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, model.rmse_, -model.rmse_)):
+        for l in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, model.test_rmse_, -model.test_rmse_)):
             fig.add_scatter(
                 x=x_cont,
                 y=model.predict(x_cont)+l[1],
@@ -806,9 +898,9 @@ def plot_catalogues(models, data_in):
             )
         fig.update_xaxes(
             title_text=f'{machine_type.capitalize()} displacement, cc/rev',
-            showline=True,
+            # showline=True,
             linecolor='black',
-            mirror=True,
+            # mirror=True,
             showgrid=True,
             gridcolor='LightGray',
             gridwidth=0.25,
@@ -819,9 +911,9 @@ def plot_catalogues(models, data_in):
         )
         fig.update_yaxes(
             title_text=f'{data_type.capitalize()}, rpm' if data_type == 'speed' else f'{data_type.capitalize()}, kg',
-            showline=True,
+            # showline=True,
             linecolor='black',
-            mirror=True,
+            # mirror=True,
             showgrid=True,
             gridcolor='LightGray',
             gridwidth=0.25,
@@ -841,8 +933,8 @@ def plot_catalogues(models, data_in):
     st.write(fig)
     for i in models:
         units = 'rpm' if 'speed' in i else 'kg'
-        st.write(f'RMSE {models[i].machine_type} {models[i].data_type} = {np.round(models[i].rmse_, decimals=2)}',
-                 u'\u00B1', f'{np.round(models[i].rmsestd_,decimals=2)}', units)
+        st.write(f'RMSE {models[i].machine_type} {models[i].data_type} = {np.round(models[i].test_rmse_, decimals=2)}',
+                 u'\u00B1', f'{np.round(models[i].cv_rmsestd_,decimals=2)}', units)
 
 
 def set_sidebar():
@@ -868,7 +960,12 @@ def set_sidebar():
 
 def test_run():
     data = pd.read_csv('.\Data\data.csv', index_col='#')
-    models = fit_catalogues(data)
+    if os.path.exists('.\Models') and len(os.listdir('.\Models')):
+        models = {}
+        for file in os.listdir('.\Models'):
+            models['_'.join([i for i in file[:-7].split('_')])] = load(file)
+    else:
+        models = fit_catalogues(data)
     plot_catalogues(models, data)
     oil, oil_temp, max_displ, max_power, gear_ratio, max_speed, max_pressure, pressure_lim = set_sidebar()
     hst = HST(max_displ, oil=oil, oil_temp=oil_temp, max_power_input=max_power,
@@ -877,13 +974,14 @@ def test_run():
     hst.compute_speed_limit(models['pump_speed'])
     hst.add_no_load((1800, 140), (2025, 180))
     hst.compute_loads(pressure_lim)
-    validate()
-    st.title(f'Physical properties of oil')
-    st.write(hst.plot_oil())
     st.title('Efficiency map')
     st.write(hst.plot_eff_maps(max_speed, max_pressure, pressure_lim=pressure_lim,
                                show_figure=False,
                                save_figure=False))
+    st.title('Physical properties of oil')
+    st.write(hst.plot_oil())
+    st.title('Validation of the HST efficiency model')
+    st.write(run_validation())
 
 
 if __name__ == '__main__':
