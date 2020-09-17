@@ -1,18 +1,13 @@
 /.git
-Models/model_motor_mass.joblib
-Models/model_motor_speed.joblib
-Models/model_pump_mass.joblib
-Models/model_pump_speed.joblib
 Images/eff_map_440.pdf
-<<<<<<< HEAD
-tryouts_regmodels.pdf
-tryouts_regmodels.ipynb
-reg_models.ipynb
-=======
-__pycache__/effMap.cpython-38.pyc
->>>>>>> 8c046eb62dbd79d165071dcab6bf6b633243d501
 Models/motor_mass.joblib
 Models/motor_speed.joblib
 Models/pump_mass.joblib
 Models/pump_speed.joblib
-hst.joblib
+Oils/SAE 5W40.csv
+Oils/SAE 10W40.csv
+Oils/SAE 10W60.csv
+Oils/SAE 15W40.csv
+Oils/SAE 30.csv
+Oils/SAE 0W30.csv
+Notebooks/validation.ipynb

@@ -1,5 +1,4 @@
 import os
-import joblib
 import requests
 import numpy as np
 import pandas as pd
@@ -7,7 +6,6 @@ import streamlit as st
 import lxml.html as lh
 import plotly.graph_objects as go
 import plotly.figure_factory as ff
-import matplotlib.pyplot as plt
 from joblib import dump, load
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit
@@ -239,37 +237,44 @@ class HST:
     def import_oils(self):
         """Imports oil data from https://wiki.anton-paar.com/uk-en/engine-oil/. Saves the oil viscosity and density table to the class attribute self.oil_data according to the predefined HST oil type self.oil.
         """
-        url = 'https://wiki.anton-paar.com/uk-en/engine-oil/'
-        page = requests.get(url)
-        doc = lh.fromstring(page.content)
-        data = doc.xpath('//tr')
-        oils = [i.text_content().rstrip().lstrip().replace('-', '')
-                for i in doc.xpath('//h3')[:-2]]
-        col = []
+        if not os.path.exists('.\Oils'):
+            os.mkdir('Oils')
+        if f'{self.oil}.csv' in os.listdir('.\Oils'):
+            self.oil_data = pd.read_csv(f'.\Oils\{self.oil}.csv', index_col=0)
+        else:
+            url = 'https://wiki.anton-paar.com/uk-en/engine-oil/'
+            page = requests.get(url)
+            doc = lh.fromstring(page.content)
+            data = doc.xpath('//tr')
+            oils = [i.text_content().rstrip().lstrip().replace('-', '')
+                    for i in doc.xpath('//h3')[:-2]]
+            col = []
 
-        for t in data[0]:
-            name = t.text_content().rstrip().lstrip()
-            name = name[:name.rfind(' ')]
-            col.append((name, []))
+            for t in data[0]:
+                name = t.text_content().rstrip().lstrip()
+                name = name[:name.rfind(' ')]
+                col.append((name, []))
 
-        for j in data[1:]:
-            i = 0
-            for t in j.iterchildren():
-                local_data = t.text_content().lstrip().rstrip()
-                try:
-                    local_data = int(
-                        local_data) if i == 0 else float(local_data)
-                except:
-                    continue
-                col[i][1].append(local_data)
-                i += 1
+            for j in data[1:]:
+                i = 0
+                for t in j.iterchildren():
+                    local_data = t.text_content().lstrip().rstrip()
+                    try:
+                        local_data = int(
+                            local_data) if i == 0 else float(local_data)
+                    except:
+                        continue
+                    col[i][1].append(local_data)
+                    i += 1
 
-        df = pd.DataFrame(
-            {(oil, title): column[i * 11: i * 11 + 11]
-             for i, oil in enumerate(oils) for (title, column) in col[1:]},
-            index=col[0][1][:11])
-        df.index.name = index_name = col[0][0]
-        self.oil_data = df[self.oil]
+            df = pd.DataFrame(
+                {(oil, title): column[i * 11: i * 11 + 11]
+                 for i, oil in enumerate(oils) for (title, column) in col[1:]},
+                index=col[0][1][:11])
+            df.index.name = index_name = col[0][0]
+            df[self.oil].to_csv(os.path.join(
+                'Oils', f'{self.oil}.csv'))
+            self.oil_data = df[self.oil]
 
     def plot_oil(self):
         """Plots the oil physical properties for a temperature range.
@@ -717,7 +722,12 @@ class HST:
         return fig
 
 
-def run_validation():
+def plot_validation():
+    """Performs validation of the efficiency model by computing the volumetric efficiency of the benchmark HST, for which test data is available containing results of measurements of the input/output speeds, and comparing the computed efficiency with the test data.
+
+    Returns:
+        fig: plotly figure object
+    """
     data = pd.read_csv('.\\Data\\test_data.csv')
     data.dropna(subset=['Forward Speed', 'Reverse Speed',
                         'Volumetric at 1780RPM'], inplace=True)
@@ -856,11 +866,9 @@ def fit_catalogues(data_in):
 
 
 def plot_catalogues(models, data_in):
-    st.title('Catalogue data and regressions')
     fig = make_subplots(rows=2, cols=2, shared_xaxes=True,
                         shared_yaxes=True, vertical_spacing=0.1, horizontal_spacing=0.07,
-                        subplot_titles=[
-                            'Pump speed data', 'Motor speed data', 'Pump mass data', 'Motor mass data'])
+                        )
     for i, j in enumerate(models):
         model = models[j]
         data_type = model.data_type
@@ -898,9 +906,7 @@ def plot_catalogues(models, data_in):
             )
         fig.update_xaxes(
             title_text=f'{machine_type.capitalize()} displacement, cc/rev',
-            # showline=True,
             linecolor='black',
-            # mirror=True,
             showgrid=True,
             gridcolor='LightGray',
             gridwidth=0.25,
@@ -911,9 +917,7 @@ def plot_catalogues(models, data_in):
         )
         fig.update_yaxes(
             title_text=f'{data_type.capitalize()}, rpm' if data_type == 'speed' else f'{data_type.capitalize()}, kg',
-            # showline=True,
             linecolor='black',
-            # mirror=True,
             showgrid=True,
             gridcolor='LightGray',
             gridwidth=0.25,
@@ -930,14 +934,22 @@ def plot_catalogues(models, data_in):
         paper_bgcolor='rgba(255,255,255,0)',
         showlegend=False,
     )
-    st.write(fig)
-    for i in models:
-        units = 'rpm' if 'speed' in i else 'kg'
-        st.write(f'RMSE {models[i].machine_type} {models[i].data_type} = {np.round(models[i].test_rmse_, decimals=2)}',
-                 u'\u00B1', f'{np.round(models[i].cv_rmsestd_,decimals=2)}', units)
+    return fig
 
 
 def set_sidebar():
+    """Assigns the default values of oil, its paramteres and initial design paramteres to initialize a HST to plot its efficiency map.
+
+    Returns:
+        oil: string, default 'SAE 15W40'
+        oil_temp: int, default 100
+        max_displ: int, default 440
+        max_power: int, default 685
+        gear_ratio: float, default .75
+        max_speed: int, default 2400
+        max_pressure: int, default 650
+        pressure_lim: int, default 480
+    """
     st.sidebar.markdown('Setting up the efficiency map')
     oil = st.sidebar.selectbox('Select an oil:',
                                ('SAE 15W40', 'SAE 10W40', 'SAE 10W60', 'SAE 5W40', 'SAE 0W30', 'SAE 30'))
@@ -959,14 +971,23 @@ def set_sidebar():
 
 
 def test_run():
+    """Runs through the funcionality of the Regressor and HST classes."""
     data = pd.read_csv('.\Data\data.csv', index_col='#')
     if os.path.exists('.\Models') and len(os.listdir('.\Models')):
         models = {}
         for file in os.listdir('.\Models'):
-            models['_'.join([i for i in file[:-7].split('_')])] = load(file)
+            models['_'.join([i for i in file[:-7].split('_')])
+                   ] = load(os.path.join(os.getcwd(), 'Models', file))
     else:
         models = fit_catalogues(data)
-    plot_catalogues(models, data)
+    st.title('Catalogue data and regressions')
+    st.write(plot_catalogues(models, data))
+    for i in models:
+        units = 'rpm' if 'speed' in i else 'kg'
+        st.write(
+            f'RMSE {models[i].machine_type} {models[i].data_type} = {np.round(models[i].test_rmse_, decimals=2)}',
+            u'\u00B1', f'{np.round(models[i].cv_rmsestd_,decimals=2)}', units
+        )
     oil, oil_temp, max_displ, max_power, gear_ratio, max_speed, max_pressure, pressure_lim = set_sidebar()
     hst = HST(max_displ, oil=oil, oil_temp=oil_temp, max_power_input=max_power,
               input_gear_ratio=gear_ratio)
@@ -981,7 +1002,7 @@ def test_run():
     st.title('Physical properties of oil')
     st.write(hst.plot_oil())
     st.title('Validation of the HST efficiency model')
-    st.write(run_validation())
+    st.write(plot_validation())
 
 
 if __name__ == '__main__':
