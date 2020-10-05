@@ -239,8 +239,9 @@ class HST:
         """
         if not os.path.exists('.\Oils'):
             os.mkdir('Oils')
-        if f'{self.oil}.csv' in os.listdir('.\Oils'):
-            self.oil_data = pd.read_csv(f'.\Oils\{self.oil}.csv', index_col=0)
+        if f'{self.oil}.csv' in os.listdir('.\\Oils'):
+            self.oil_data = pd.read_csv(
+                f'.\\Oils\\{self.oil}.csv', index_col=0)
         else:
             url = 'https://wiki.anton-paar.com/uk-en/engine-oil/'
             page = requests.get(url)
@@ -970,14 +971,13 @@ def set_sidebar():
     return oil, oil_temp, max_displ, max_power, gear_ratio, max_speed, max_pressure, pressure_lim
 
 
-def test_run():
+def main():
     """Runs through the funcionality of the Regressor and HST classes."""
-    data = pd.read_csv('.\Data\data.csv', index_col='#')
-    if os.path.exists('.\Models') and len(os.listdir('.\Models')):
+    data = pd.read_csv('.\\Data\\data.csv', index_col='#')
+    if os.path.exists('.\\Models') and len(os.listdir('.\\Models')):
         models = {}
-        for file in os.listdir('.\Models'):
-            models['_'.join([i for i in file[:-7].split('_')])
-                   ] = load(os.path.join(os.getcwd(), 'Models', file))
+        for file in os.listdir('.\\Models'):
+            models[file[:-7]] = load(os.path.join(os.getcwd(), 'Models', file))
     else:
         models = fit_catalogues(data)
     st.title('Catalogue data and regressions')
@@ -1006,4 +1006,4 @@ def test_run():
 
 
 if __name__ == '__main__':
-    test_run()
+    main()
