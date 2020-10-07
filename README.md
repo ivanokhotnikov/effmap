@@ -11,5 +11,6 @@ pip install effmap
 
 ## Usage
 ```
-import effmap
+from effmap.hst import HST
+from effmap.regressor import Regressor
 ```

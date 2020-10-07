@@ -2,7 +2,6 @@ import os
 import requests
 import numpy as np
 import pandas as pd
-import streamlit as st
 import lxml.html as lh
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
