@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="effmap-YOUR-USERNAME-HERE",  # Replace with your own username
+    name="effmap",  # Replace with your own username
     version="0.0.1",
     author="Ivan Okhotnikov",
     author_email="ivan.okhotnikov@outlook.com",

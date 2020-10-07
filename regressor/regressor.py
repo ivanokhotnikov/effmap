@@ -1,8 +1,6 @@
 import os
 import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit
 from sklearn.base import BaseEstimator
 from sklearn.metrics import r2_score, mean_squared_error
@@ -185,10 +183,10 @@ class Regressor(BaseEstimator):
                         dash='dash'),
                 )
         if save_figure:
-            if not os.path.exists('Images'):
-                os.mkdir('Images')
+            if not os.path.exists('images'):
+                os.mkdir('images')
             fig.write_image(
-                f'Images/{self.machine_type}_{self.data_type}.{format}')
+                f'images/{self.machine_type}_{self.data_type}.{format}')
         if show_figure:
             fig.show()
         return fig

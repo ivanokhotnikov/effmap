@@ -1,13 +1,19 @@
 /.git
-Images/eff_map_440.pdf
-Models/motor_mass.joblib
-Models/motor_speed.joblib
-Models/pump_mass.joblib
-Models/pump_speed.joblib
-Oils/SAE 5W40.csv
-Oils/SAE 10W40.csv
-Oils/SAE 10W60.csv
-Oils/SAE 15W40.csv
-Oils/SAE 30.csv
-Oils/SAE 0W30.csv
-Notebooks/validation.ipynb
+images/eff_map_440.pdf
+models/motor_mass.joblib
+models/motor_speed.joblib
+models/pump_mass.joblib
+models/pump_speed.joblib
+oils/SAE 5W40.csv
+oils/SAE 10W40.csv
+oils/SAE 10W60.csv
+oils/SAE 15W40.csv
+oils/SAE 30.csv
+oils/SAE 0W30.csv
+notebooks/validation.ipynb
+regressor/__pycache__/__init__.cpython-38.pyc
+hst/__pycache__/__init__.cpython-38.pyc
+hst/__pycache__/hst.cpython-38.pyc
+hst/Oils/SAE 15W40.csv
+regressor/__pycache__/regressor.cpython-38.pyc
+setup.py
