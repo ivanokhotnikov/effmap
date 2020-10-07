@@ -1,13 +1,11 @@
 /.git
-Images/eff_map_440.pdf
-Models/motor_mass.joblib
-Models/motor_speed.joblib
-Models/pump_mass.joblib
-Models/pump_speed.joblib
-Oils/SAE 5W40.csv
-Oils/SAE 10W40.csv
-Oils/SAE 10W60.csv
-Oils/SAE 15W40.csv
-Oils/SAE 30.csv
-Oils/SAE 0W30.csv
-Notebooks/validation.ipynb
+models/*
+images/*
+oils/*
+build/*
+dist/*
+effmap/__pycache__/*
+effmap.egg-info/*
+notebooks/validation.ipynb
+setup.py
+__pycache__/*
