@@ -4,8 +4,8 @@ import numpy as np
 import streamlit as st
 import plotly.figure_factory as ff
 from joblib import dump, load
-from hst.hst import HST
-from regressor.regressor import Regressor
+from effmap.hst import HST
+from effmap.regressor import Regressor
 from plotly.subplots import make_subplots
 from sklearn.model_selection import KFold, train_test_split, cross_validate
 
