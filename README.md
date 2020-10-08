@@ -14,3 +14,8 @@ pip install effmap
 from effmap.hst import HST
 from effmap.regressor import Regressor
 ```
+
+## Web app
+https://effmap.herokuapp.com/
+
+Code for the web app: https://github.com/ivanokhotnikov/effmap_demo
