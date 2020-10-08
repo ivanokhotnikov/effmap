@@ -38,7 +38,11 @@ class HST:
         self.engine = engine
         self.input_gear_ratio = input_gear_ratio
         self.max_power_input = max_power_input
-        self.import_oils()
+        self.load_oil()
+    
+    def load_oil(self):
+        """Loads oil data from GitHub repository"""
+        self.oil_data = pd.read_csv(f'https://raw.githubusercontent.com/ivanokhotnikov/effmap/master/oils/SAE%20{self.oil[4:]}.csv', index_col=0)
 
     def import_oils(self):
         """Imports oil data from https://wiki.anton-paar.com/uk-en/engine-oil/. Saves the oil viscosity and density table to the class attribute self.oil_data according to the predefined HST oil type self.oil.
