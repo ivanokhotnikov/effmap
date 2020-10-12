@@ -39,10 +39,11 @@ class HST:
         self.input_gear_ratio = input_gear_ratio
         self.max_power_input = max_power_input
         self.load_oil()
-    
+
     def load_oil(self):
         """Loads oil data from GitHub repository"""
-        self.oil_data = pd.read_csv(f'https://raw.githubusercontent.com/ivanokhotnikov/effmap/master/oils/SAE%20{self.oil[4:]}.csv', index_col=0)
+        self.oil_data = pd.read_csv(
+            f'https://raw.githubusercontent.com/ivanokhotnikov/effmap/master/oils/SAE%20{self.oil[4:]}.csv', index_col=0)
 
     def import_oils(self):
         """Imports oil data from https://wiki.anton-paar.com/uk-en/engine-oil/. Saves the oil viscosity and density table to the class attribute self.oil_data according to the predefined HST oil type self.oil.
@@ -324,7 +325,7 @@ class HST:
         self.no_load_intercept = lin_reg.intercept_
         self.no_load_coef = lin_reg.coef_
 
-    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=100, show_figure=True, save_figure=False, format='pdf'):
+    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=50, show_figure=True, save_figure=False, format='pdf'):
         """Plots and optionally saves the HST efficiency maps.
 
         Parameters
