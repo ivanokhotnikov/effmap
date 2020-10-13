@@ -93,8 +93,7 @@ class HST:
 
         Returns
         -------
-        fig: streamlit figure obeject
-            The streamlit figure.
+        fig: plotly figure obeject
         """
         fig = go.Figure()
         fig.add_scatter(
@@ -350,6 +349,10 @@ class HST:
             The file extension in which the figure will be saved, default 'pdf'.
         in_app: bool, optional
             The flag allowing to show the plots in a browser.
+
+        Returns:
+        ---
+        fig: plotly figure object
         """
         speed = np.linspace(min_speed_pump, max_speed_pump, res)
         pressure = np.linspace(min_pressure_discharge,
@@ -402,7 +405,7 @@ class HST:
             )
         )
         fig.update_layout(
-            title=f'HST efficiency map and the engine torque curve {self.oil} at {self.oil_temp}C',
+            title=f'HST{self.displ} efficiency map and the engine torque curve {self.oil} at {self.oil_temp}C',
             width=800,
             height=700,
             xaxis=dict(
