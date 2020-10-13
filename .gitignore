@@ -9,3 +9,4 @@ notebooks/validation.ipynb
 setup.py
 __pycache__/*
 MANIFEST.in
+setup.py
