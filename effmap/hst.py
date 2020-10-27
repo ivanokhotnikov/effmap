@@ -186,7 +186,12 @@ class HST:
                 'engine_2': {'speed': [600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400],
                              'torque': [1000, 1100, 1450, 1750, 2100, 2400, 2600, 2950, 3100, 3300, 3400, 3500, 3400, 3300, 3200, 3000, 2800, 2600, 0],
                              'power': [62.8319, 80.634, 121.475, 164.934, 219.911, 276.46, 326.726, 401.6, 454.484, 518.363, 569.675, 623.083, 640.885, 656.593, 670.206, 659.734, 645.074, 626.224, 0],
-                             'pivot speed': 2200}}
+                             'pivot speed': 2200},
+                'engine_3': {'speed': [1800, 1900, 2000, 2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000, 3100, 3200],
+                             'torque': [4270, 4458, 4558, 4439, 4350, 4250, 4144, 4033, 3891, 3703, 3459, 3183, 2817, 871],
+                             'power': [805, 887, 955, 994, 1023, 1048, 1068, 1085, 1098, 1100, 1086, 1050, 1000, 914, 292],
+                             'pivot speed': 2700}
+                }
 
     def compute_sizes(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
         """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
@@ -305,12 +310,17 @@ class HST:
         """
         self.shaft_radial = ((self.pistons // 2 + 1) * pressure_discharge + self.pistons //
                              2 * pressure_charge) * 1e5 * self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
-        self.swash_high_x = (self.pistons // 2 + 1) * \
+        self.swash_hp_x = (self.pistons // 2 + 1) * \
             pressure_discharge * 1e5 * self.sizes['Ap'] / 1e3
-        self.swash_low_x = self.pistons // 2 * \
+        self.swash_lp_x = self.pistons // 2 * \
             pressure_charge * 1e5 * self.sizes['Ap'] / 1e3
-        self.swash_high_z = self.swash_high_x * np.tan(np.radians(self.swash))
-        self.swash_low_z = self.swash_low_x * np.tan(np.radians(self.swash))
+        self.swash_hp_z = self.swash_high_x * np.tan(np.radians(self.swash))
+        self.swash_lp_z = self.swash_low_x * np.tan(np.radians(self.swash))
+        self.motor_hp = (self.pistons // 2 + 1) * pressure_discharge * \
+            1e5 * self.sizes['Ap'] * np.sec(np.radians(self.swash))
+        self.motor_lp = (self.pistons // 2) * pressure_charge * \
+            1e5 * self.sizes['Ap'] * np.sec(np.radians(self.swash))
+        self.shaft_torque = self.performance['pump']['torque']
 
     def add_no_load(self, *args):
         """Adds class attributes of the no-load test data: tuple self.no_load containing speeds and pressures of possible onset of block tilting, self.no_load_intercept and self.no_load_coef are coefficients of a linear regression model built for the no_load data."""
