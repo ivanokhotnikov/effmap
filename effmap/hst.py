@@ -317,9 +317,9 @@ class HST:
         self.swash_hp_z = self.swash_hp_x * np.tan(np.radians(self.swash))
         self.swash_lp_z = self.swash_lp_x * np.tan(np.radians(self.swash))
         self.motor_hp = (self.pistons // 2 + 1) * pressure_discharge * \
-            1e5 * self.sizes['Ap'] * np.sec(np.radians(self.swash))
+            1e5 * self.sizes['Ap'] / np.cos(np.radians(self.swash))
         self.motor_lp = (self.pistons // 2) * pressure_charge * \
-            1e5 * self.sizes['Ap'] * np.sec(np.radians(self.swash))
+            1e5 * self.sizes['Ap'] / np.cos(np.radians(self.swash))
         self.shaft_torque = self.performance['pump']['torque']
 
     def add_no_load(self, *args):
