@@ -314,8 +314,8 @@ class HST:
             pressure_discharge * 1e5 * self.sizes['Ap'] / 1e3
         self.swash_lp_x = self.pistons // 2 * \
             pressure_charge * 1e5 * self.sizes['Ap'] / 1e3
-        self.swash_hp_z = self.swash_high_x * np.tan(np.radians(self.swash))
-        self.swash_lp_z = self.swash_low_x * np.tan(np.radians(self.swash))
+        self.swash_hp_z = self.swash_hp_x * np.tan(np.radians(self.swash))
+        self.swash_lp_z = self.swash_lp_x * np.tan(np.radians(self.swash))
         self.motor_hp = (self.pistons // 2 + 1) * pressure_discharge * \
             1e5 * self.sizes['Ap'] * np.sec(np.radians(self.swash))
         self.motor_lp = (self.pistons // 2) * pressure_charge * \
