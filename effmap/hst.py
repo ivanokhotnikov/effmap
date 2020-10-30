@@ -334,7 +334,7 @@ class HST:
         self.no_load_intercept = lin_reg.intercept_
         self.no_load_coef = lin_reg.coef_
 
-    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, pressure_lim=480, res=50, show_figure=True, save_figure=False, format='pdf'):
+    def plot_eff_maps(self, max_speed_pump, max_pressure_discharge, min_speed_pump=1000, min_pressure_discharge=75, pressure_charge=25.0, res=50, show_figure=True, save_figure=False, format='pdf'):
         """Plots and optionally saves the HST efficiency maps.
 
         Parameters
@@ -347,8 +347,6 @@ class HST:
             The lower limit of the input speed range on the map in rpm, default nmin = 1000 rpm.
         min_pressure_discharge: int, optional
             The lower limit of the discharge pressure range on the map in bar, default pmin = 100 bar.
-        pressure_lim: int, optional
-            The torque limiter setting in bar, default 480 bar.
         res: float, optional
             The resolution of the map. The number of efficiency samples calculated per axis, default = 100.
         show_figure: bool, optional
@@ -481,29 +479,38 @@ class HST:
                 yaxis='y2'
             )
             fig.add_scatter(
-                x=[self.input_gear_ratio *
-                    ENGINES[self.engine]['pivot speed']],
-                y=[performance_pivot['pump']['torque']],
-                name='Pivot turn',
-                mode='markers',
-                marker=dict(
-                    color='steelblue',
-                    size=7,
-                    line=dict(
-                        color='navy',
-                        width=1
-                    ),
-                ),
-                yaxis='y2'
+                x=[np.amin(speed), np.amax(speed)],
+                y=[performance_pivot['discharge pressure'],
+                    performance_pivot['discharge pressure']],
+                mode='lines',
+                name='Pressure at pivot turn',
+                line=dict(
+                    color='red',
+                    dash='dot',
+                    width=1),
+                yaxis='y1',
             )
             fig.add_scatter(
                 x=[np.amin(speed), np.amax(speed)],
-                y=[pressure_lim, pressure_lim],
+                y=[.65 * performance_pivot['discharge pressure'],
+                    .65 * performance_pivot['discharge pressure']],
                 mode='lines',
-                name='Limiter setting',
+                name='Pressure at tight turn',
                 line=dict(
-                    color='darkseagreen',
-                    dash='dash',
+                    color='orange',
+                    dash='dot',
+                    width=1),
+                yaxis='y1',
+            )
+            fig.add_scatter(
+                x=[np.amin(speed), np.amax(speed)],
+                y=[.5 * performance_pivot['discharge pressure'],
+                    .5 * performance_pivot['discharge pressure']],
+                mode='lines',
+                name='Pressure at cornering',
+                line=dict(
+                    color='green',
+                    dash='dot',
                     width=1),
                 yaxis='y1',
             )
@@ -522,6 +529,22 @@ class HST:
                 ),
                 yaxis=dict(
                     range=[np.amin(pressure), np.amax(pressure)]),
+            )
+            fig.add_scatter(
+                x=[self.input_gear_ratio *
+                    ENGINES[self.engine]['pivot speed']],
+                y=[performance_pivot['pump']['torque']],
+                name='Pivot turn',
+                mode='markers',
+                marker=dict(
+                    color='steelblue',
+                    size=7,
+                    line=dict(
+                        color='navy',
+                        width=1
+                    ),
+                ),
+                yaxis='y2'
             )
         if self.pump_speed_limit:
             for i in zip(self.pump_speed_limit, ('Min rated speed', 'Rated speed', 'Max rated speed'), ('green', 'orange', 'red')):
