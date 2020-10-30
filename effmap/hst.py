@@ -12,7 +12,7 @@ class HST:
 
     Attributes
     ----------
-    disp: int
+    displ: int
         The displacement of an axial-piston machine in cc/rev
     swash: int, optional
         The maxi swash angle of the axial piston machine in degrees, default 18 degrees when optional.
@@ -28,8 +28,8 @@ class HST:
         The maximum mechanical power in kW the HST is meant to transmit, i.e. to take as an input, default 682 kW.
     """
 
-    def __init__(self, disp, swash=18, pistons=9, oil='SAE 15W40', oil_temp=100, engine='engine_1', input_gear_ratio=.75, max_power_input=680):
-        self.displ = disp
+    def __init__(self, displ, swash=18, pistons=9, oil='SAE 15W40', oil_temp=100, engine='engine_1', input_gear_ratio=.75, max_power_input=680):
+        self.displ = displ
         self.swash = swash
         self.pistons = pistons
         self.oil = oil
