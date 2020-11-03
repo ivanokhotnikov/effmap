@@ -308,17 +308,17 @@ class HST:
         pressure_charge: float, optional
             The charge pressure in bar, default 25.0 bar.
         """
-        self.shaft_radial = ((self.pistons // 2 + 1) * pressure_discharge + self.pistons //
-                             2 * pressure_charge) * 1e5 * self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
-        self.swash_hp_x = (self.pistons // 2 + 1) * \
+        self.shaft_radial = (np.ceil(self.pistons / 2) * pressure_discharge + np.floor(self.pistons / 2)
+                             * pressure_charge) * 1e5 * self.sizes['Ap'] * np.tan(np.radians(self.swash)) / 1e3
+        self.swash_hp_x = np.ceil(self.pistons / 2) * \
             pressure_discharge * 1e5 * self.sizes['Ap'] / 1e3
-        self.swash_lp_x = self.pistons // 2 * \
+        self.swash_lp_x = np.floor(self.pistons / 2) * \
             pressure_charge * 1e5 * self.sizes['Ap'] / 1e3
         self.swash_hp_z = self.swash_hp_x * np.tan(np.radians(self.swash))
         self.swash_lp_z = self.swash_lp_x * np.tan(np.radians(self.swash))
-        self.motor_hp = (self.pistons // 2 + 1) * pressure_discharge * \
+        self.motor_hp = np.ceil(self.pistons / 2) * pressure_discharge * \
             1e5 * self.sizes['Ap'] / np.cos(np.radians(self.swash)) / 1e3
-        self.motor_lp = (self.pistons // 2) * pressure_charge * \
+        self.motor_lp = np.floor(self.pistons / 2) * pressure_charge * \
             1e5 * self.sizes['Ap'] / np.cos(np.radians(self.swash)) / 1e3
         self.shaft_torque = self.performance['pump']['torque']
 
