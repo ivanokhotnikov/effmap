@@ -22,7 +22,6 @@ class Regressor(BaseEstimator):
     data_type: {'speed', 'mass'}, optional
         The string specifying a data type, deafult 'speed'.
     """
-
     def __init__(self, machine_type, data_type):
         self.machine_type = machine_type
         self.data_type = data_type
@@ -73,11 +72,10 @@ class Regressor(BaseEstimator):
         guess_speed = [1e3, 1e-3, 1e3]
         guess_mass = [1, 1]
         if self.data_type == 'speed':
-            self.coefs_, self.cov_ = curve_fit(
-                self.reg_func, x, y, guess_speed)
+            self.coefs_, self.cov_ = curve_fit(self.reg_func, x, y,
+                                               guess_speed)
         elif self.data_type == 'mass':
-            self.coefs_, self.cov_ = curve_fit(
-                self.reg_func, x, y, guess_mass)
+            self.coefs_, self.cov_ = curve_fit(self.reg_func, x, y, guess_mass)
 
     def predict(self, x):
         """Calculates the regression function for a given input variable x and regression coefficients (taken from the class attributes).
@@ -99,7 +97,8 @@ class Regressor(BaseEstimator):
         y: ndarray
             Ground truth target values
         """
-        return mean_squared_error(y, self.predict(x), squared=False), r2_score(y, self.predict(x))
+        return mean_squared_error(y, self.predict(x),
+                                  squared=False), r2_score(y, self.predict(x))
 
     def plot(self, data, show_figure=False, save_figure=False, format='pdf'):
         """Plots and optionally saves the catalogue data alonoe or the cataloue data and the regression model if fitting was performed.
@@ -122,20 +121,13 @@ class Regressor(BaseEstimator):
         """
         fig = go.Figure()
         for idx, i in enumerate(data['manufacturer'].unique()):
-            fig.add_scatter(
-                x=data['displacement'][data['manufacturer'] == i],
-                y=data[self.data_type][data['manufacturer'] == i],
-                mode='markers',
-                name=i,
-                marker_symbol=idx,
-                marker=dict(
-                    size=7,
-                    line=dict(
-                        color='black',
-                        width=.5
-                    )
-                )
-            )
+            fig.add_scatter(x=data['displacement'][data['manufacturer'] == i],
+                            y=data[self.data_type][data['manufacturer'] == i],
+                            mode='markers',
+                            name=i,
+                            marker_symbol=idx,
+                            marker=dict(size=7,
+                                        line=dict(color='black', width=.5)))
         fig.update_layout(
             title=f'{self.machine_type.capitalize()} {self.data_type} data',
             width=800,
@@ -149,10 +141,11 @@ class Regressor(BaseEstimator):
                 gridcolor='LightGray',
                 gridwidth=0.25,
                 linewidth=0.5,
-                range=[0, round(1.1 * max(data['displacement']), -2)]
-            ),
+                range=[0, round(1.1 * max(data['displacement']), -2)]),
             yaxis=dict(
-                title=f'{self.machine_type.capitalize()} {self.data_type}, rpm' if self.data_type == 'speed' else f'{self.machine_type.capitalize()} {self.data_type}, kg',
+                title=f'{self.machine_type.capitalize()} {self.data_type}, rpm'
+                if self.data_type == 'speed' else
+                f'{self.machine_type.capitalize()} {self.data_type}, kg',
                 showline=True,
                 linecolor='black',
                 mirror=True,
@@ -160,27 +153,27 @@ class Regressor(BaseEstimator):
                 gridcolor='LightGray',
                 gridwidth=0.25,
                 linewidth=0.5,
-                range=[0, round(1.1 * max(data[self.data_type]), -2)] if self.data_type == 'mass' else [
-                    round(.9 * min(data[self.data_type]), -2), round(1.1 * max(data[self.data_type]), -2)]
-            ),
+                range=[0, round(1.1 * max(data[self.data_type]), -2)]
+                if self.data_type == 'mass' else [
+                    round(.9 * min(data[self.data_type]), -2),
+                    round(1.1 * max(data[self.data_type]), -2)
+                ]),
             plot_bgcolor='rgba(255,255,255,1)',
             paper_bgcolor='rgba(255,255,255,0)',
             showlegend=True,
         )
         if self.fitted_:
-            data = data[data['type'] ==
-                        f'{self.machine_type.capitalize()}']
+            data = data[data['type'] == f'{self.machine_type.capitalize()}']
             x = data['displacement'].values
             x_cont = np.linspace(.2 * np.amin(x), 1.2 * np.amax(x), num=100)
-            for i in zip(('Regression model', 'Upper limit', 'Lower limit'), (0, self.rmse_, -self.rmse_)):
+            for i in zip(('Regression model', 'Upper limit', 'Lower limit'),
+                         (0, self.rmse_, -self.rmse_)):
                 fig.add_scatter(
                     x=x_cont,
-                    y=self.predict(x_cont)+i[1],
+                    y=self.predict(x_cont) + i[1],
                     mode='lines',
                     name=i[0],
-                    line=dict(
-                        width=1,
-                        dash='dash'),
+                    line=dict(width=1, dash='dash'),
                 )
         if save_figure:
             if not os.path.exists('images'):
