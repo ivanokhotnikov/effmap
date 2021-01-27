@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="effmap",  # Replace with your own username
-    version="0.0.11",
+    version="0.0.12",
     author="Ivan Okhotnikov",
     author_email="ivan.okhotnikov@outlook.com",
     description="Custom regressor and HST object",
