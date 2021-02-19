@@ -28,7 +28,6 @@ class HST:
         The maximum mechanical power in kW the HST is meant to transmit, i.e. to take as an input, default 682 kW.
     """
     def __init__(self,
-                 displ,
                  swash=18,
                  pistons=9,
                  oil='SAE 15W40',
@@ -36,7 +35,7 @@ class HST:
                  engine='engine_1',
                  input_gear_ratio=.75,
                  max_power_input=680):
-        self.displ = displ
+        self.displ = None
         self.swash = swash
         self.pistons = pistons
         self.oil = oil
@@ -227,15 +226,18 @@ class HST:
             }
         }
 
-    def compute_sizes(self, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
+    def compute_sizes(self, displ, k1=.75, k2=.91, k3=.48, k4=.93, k5=.91):
         """Defines the basic sizes of the pumping group of an axial piston machine in metres. Updates the `sizes` attribute.
 
         Parameters
         ----------
+        displ: float
+            Displacement of the pumping group
         k1, k2, k3, k4, k5: float, optional
             Design balances, default k1 = .75, k2 = .91, k3 = .48, k4 = .93, k5 = .91
 
         """
+        self.displ = displ
         dia_piston = (4 * self.displ * 1e-6 * k1 /
                       (self.pistons**2 * np.tan(np.radians(self.swash))))**(1 /
                                                                             3)
@@ -415,7 +417,7 @@ class HST:
                 'total': total_hst
             }
         }
-        return self.efficiencies
+        return self.efficiencies, self.performance
 
     def compute_loads(self, pressure_discharge, pressure_charge=25.0):
         """Calculates steady state, pressure-induced structural loads in the HST Forces in kN, torques in Nm.
