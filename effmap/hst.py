@@ -237,7 +237,7 @@ class HST:
                     0
                 ],
                 'power': [
-                    183, 213, 251, 299, 366, 448, 544, 654, 777, 915, 963, 1011, 
+                    183, 213, 251, 299, 366, 448, 544, 654, 777, 915, 963, 1011,
                     1059, 1074, 1085, 1094, 1099, 1099, 967, 820, 0
                 ],
                 'pivot speed':
@@ -536,8 +536,8 @@ class HST:
                        contours_coloring='lines',
                        name='HST efficiency, %',
                        contours=dict(coloring='lines',
-                                     start=50,
-                                     end=90,
+                                     start=10,
+                                     end=99,
                                      size=1,
                                      showlabels=True,
                                      labelfont=dict(size=8, color='black'))), )
