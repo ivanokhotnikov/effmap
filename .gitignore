@@ -5,7 +5,6 @@ build/*
 dist/*
 effmap/__pycache__/*
 effmap.egg-info/*
-notebooks/validation.ipynb
 setup.py
 __pycache__/*
 MANIFEST.in
